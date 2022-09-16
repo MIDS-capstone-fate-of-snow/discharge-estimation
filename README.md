@@ -37,6 +37,7 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 * [Zoom video recording with TA Colorado Reed](https://zoom.us/rec/play/LeGfgLJw4m33wnZFp5kqTWBikPFPYOAUOWMY62D2cGHgEOc5kE_5jd4ADvH9E4V3AacB9WWEOY1-jn8e.wMqvTPDgHHiK_d3o)
 * [What is Remote Sensing?](https://www.earthdata.nasa.gov/learn/backgrounders/remote-sensing)
 * [OpenET](https://openetdata.org/)
+* [ERA5 hourly data on single levels from 1959 to present](https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels?tab=overview)
 
 ### Related work
 
