@@ -46,6 +46,6 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 * [TorchGeo](https://github.com/microsoft/torchgeo)
 * [BAIR Climate Initiative](https://data.berkeley.edu/news/new-uc-berkeley-initiative-uses-ai-research-solve-climate-problems)
 * [BAIR Climate Initiative - MetaEarth](https://github.com/bair-climate-initiative/metaearth)
-* [Driven Data Snowcast Challenge[(https://drivendata.co/blog/swe-winners)
+* [Driven Data Snowcast Challenge](https://drivendata.co/blog/swe-winners)
 
 
