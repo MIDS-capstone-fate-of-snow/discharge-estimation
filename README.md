@@ -36,6 +36,7 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 * [Professors' list of resources](https://docs.google.com/document/d/1f5q4R9SzMGcB734Oyqxy1ErVIpIZs1eCkHz0uaiqY4c/edit)
 * [Zoom video recording with TA Colorado Reed](https://zoom.us/rec/play/LeGfgLJw4m33wnZFp5kqTWBikPFPYOAUOWMY62D2cGHgEOc5kE_5jd4ADvH9E4V3AacB9WWEOY1-jn8e.wMqvTPDgHHiK_d3o)
 * [What is Remote Sensing?](https://www.earthdata.nasa.gov/learn/backgrounders/remote-sensing)
+* [OpenET](https://openetdata.org/)
 
 ### Related work
 
@@ -45,5 +46,6 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 * [TorchGeo](https://github.com/microsoft/torchgeo)
 * [BAIR Climate Initiative](https://data.berkeley.edu/news/new-uc-berkeley-initiative-uses-ai-research-solve-climate-problems)
 * [BAIR Climate Initiative - MetaEarth](https://github.com/bair-climate-initiative/metaearth)
+* [Driven Data Snowcast Challenge[(https://drivendata.co/blog/swe-winners)
 
 
