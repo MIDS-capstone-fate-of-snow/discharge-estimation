@@ -29,6 +29,9 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 * [_Introduction to Hydrology_ textbook](https://margulis-group.github.io/teaching/)
 * [How Streamflow is Measured](https://www.usgs.gov/special-topics/water-science-school/science/how-streamflow-measured)
 * [USGS Water Data for the Nation](https://waterdata.usgs.gov/nwis/)
+* [What Are Hydrologic Units?](https://water.usgs.gov/GIS/huc.html)
+* [USGS National Hydrography Products](https://www.usgs.gov/national-hydrography/access-national-hydrography-products)
+* [USGS State Shapefiles](https://prd-tnm.s3.amazonaws.com/index.html?prefix=StagedProducts/Hydrography/NHD/State/Shape/)
 
 ### Satellite data
 
@@ -46,4 +49,7 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 * [BAIR Climate Initiative](https://data.berkeley.edu/news/new-uc-berkeley-initiative-uses-ai-research-solve-climate-problems)
 * [BAIR Climate Initiative - MetaEarth](https://github.com/bair-climate-initiative/metaearth)
 
+### Tools
+
+* [GeoPandas - Plotting polygons with Folium](https://geopandas.org/en/stable/gallery/polygon_plotting_with_folium.html)
 
