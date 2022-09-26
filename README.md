@@ -28,6 +28,7 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 
 * [_Introduction to Hydrology_ textbook](https://margulis-group.github.io/teaching/)
 * [How Streamflow is Measured](https://www.usgs.gov/special-topics/water-science-school/science/how-streamflow-measured)
+* [What is streamflow data used for?](https://www.usgs.gov/special-topics/water-science-school/science/uses-streamflow-information)
 * [USGS Water Data for the Nation](https://waterdata.usgs.gov/nwis/)
 * [What Are Hydrologic Units?](https://water.usgs.gov/GIS/huc.html)
 * [USGS National Hydrography Products](https://www.usgs.gov/national-hydrography/access-national-hydrography-products)
@@ -55,4 +56,5 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 ### Tools
 
 * [GeoPandas - Plotting polygons with Folium](https://geopandas.org/en/stable/gallery/polygon_plotting_with_folium.html)
+* [pysheds - Python library for calculating watersheds](https://github.com/mdbartos/pysheds)
 
