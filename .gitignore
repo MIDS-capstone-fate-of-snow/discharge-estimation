@@ -2,6 +2,8 @@
 /data/NHD/NHD_H_California_State_Shape.zip
 /data/WBD_National_GDB/WBD_National_GDB.gdb
 
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
