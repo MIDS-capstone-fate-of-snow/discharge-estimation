@@ -57,4 +57,5 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 
 * [GeoPandas - Plotting polygons with Folium](https://geopandas.org/en/stable/gallery/polygon_plotting_with_folium.html)
 * [pysheds - Python library for calculating watersheds](https://github.com/mdbartos/pysheds)
+* [Transformers in Time Series](https://github.com/qingsongedu/time-series-transformers-review)
 
