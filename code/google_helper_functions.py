@@ -1,15 +1,19 @@
 """Helper functions for working with Google Earth Engine and Google Drive
 service accounts."""
 
+import datetime
 import os
 import warnings
 
 import ee
 from oauth2client.service_account import ServiceAccountCredentials
+import pandas as pd
 import pydrive2
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
 from tqdm import tqdm
+
+DATETIME_FORMAT = "%Y_%m_%d__%H_%M_%S"
 
 
 def connect_to_service_account_gdrive(key_fp: str):
@@ -66,3 +70,18 @@ def download_files_from_gdrive(drive: pydrive2.drive.GoogleDrive, filename: str,
         f.GetContentFile(target)
         downloaded.append(target)
     return downloaded
+
+
+def clear_up_service_account_gdrive(drive):
+    files = drive.ListFile({"q": f"trashed=false"}).GetList()
+    files = [f for f in files if f["title"].endswith(".tif") and "__" in f["title"] and "elv" in f["title"]]
+    gage_ids = [f["title"].split("_")[0] for f in files]
+    timestamps = [f"2022" + f["title"].split("2022")[-1][:-4] for f in files]
+    timestamps = [datetime.datetime.strptime(ts, DATETIME_FORMAT) for ts in timestamps]
+    df = pd.DataFrame({"file": files, "gage_id": gage_ids, "timestamp": timestamps})
+    df = df.sort_values(by=["gage_id", "timestamp"], ascending=False)
+    df["keep"] = df["gage_id"] != df["gage_id"].shift(-1)
+    delete = df[~df["keep"]]
+    for drive_file in delete["file"]:
+        drive_file.Delete()
+    return delete

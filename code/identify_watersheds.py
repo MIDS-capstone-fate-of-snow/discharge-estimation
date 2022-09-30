@@ -2,6 +2,7 @@
 
 import datetime
 import os
+import time
 
 import ee
 import folium
@@ -12,6 +13,9 @@ import pandas as pd
 import pickle
 from pysheds.grid import Grid
 
+from google_helper_functions import authenticate_gee, connect_to_service_account_gdrive, download_files_from_gdrive
+
+DATETIME_FORMAT = "%Y_%m_%d__%H_%M_%S"
 
 # Get the directory location:
 DIR, FILENAME = os.path.split(__file__)
@@ -104,7 +108,7 @@ def save_gee_elv_to_drive(lat: float, lon: float, name: str,
     roi = poi.buffer(buffer)
 
     description = f"Elevation data export for streamgage {name}"
-    now = datetime.datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
+    now = datetime.datetime.now().strftime(DATETIME_FORMAT)
     filename = f"{name}_{scale:.0f}m_elv_{now}"
 
     # Export the geotiff to GDrive for the elevation image in the highlighted polygon:
@@ -156,7 +160,13 @@ class WatershedIdentifier:
 
     def calculate_catchment(self, lat: float, lon: float, min_acc: float = 1.0):
         self.lat, self.lon, self.min_acc = lat, lon, min_acc  # NOQA
-        self.catch = self.delineate_catchment(lat, lon, min_acc)  # NOQA
+
+        # Move the lat-lon to a higher pour point if necessary:
+        self.snap_lon, self.snap_lat = self.snap_lat_lon_on_acc(lat, lon, min_acc)  # NOQA
+
+        # Delineate the catchment:
+        self.catch = self.grid.catchment(x=self.snap_lon, y=self.snap_lat, fdir=self.fdir, # NOQA
+                                         dirmap=self.dirmap, xytype="coordinate")
 
         # Create clipped version:
         self.clipped_grid = Grid.from_raster(self.tif_fp)  # NOQA
@@ -175,6 +185,18 @@ class WatershedIdentifier:
     def catchment_total_pixels(self):
         return self.clipped_catch.sum()
 
+    @property
+    def catchment_touches_grid_edge(self):
+        """Identify if any of the catchment area identified sits on the
+        boundaries of the input TIF file (meaning the file may need to be
+        enlarged to capture the full watershed)."""
+        catchment_arr = np.array(self.catch)
+        first_row_sum = catchment_arr[1, :].astype(int).sum()
+        last_row_sum = catchment_arr[-2, :].astype(int).sum()
+        first_col_sum = catchment_arr[:, 1].astype(int).sum()
+        last_col_sum = catchment_arr[:, -2].astype(int).sum()
+        return any([first_row_sum, last_row_sum, first_col_sum, last_col_sum])
+
     def summarize_catchment(self, pixel_m: float = 30.0):
         pixel_km = pixel_m / 1000
         summary = {
@@ -184,14 +206,6 @@ class WatershedIdentifier:
             "total_sq_km": float(self.catchment_total_pixels * (pixel_km * pixel_km))
         }
         return summary
-
-    def delineate_catchment(self, lat: float, lon: float,
-                            min_acc: float = 1000.0):
-        snap_lon, snap_lat = self.snap_lat_lon_on_acc(lat, lon, min_acc)
-
-        # Delineate the catchment:
-        catch = self.grid.catchment(x=snap_lon, y=snap_lat, fdir=self.fdir, dirmap=self.dirmap, xytype="coordinate")
-        return catch
 
     def snap_lat_lon_on_acc(self, lat: float, lon: float,
                             min_acc: float = 1_000.0):
@@ -304,20 +318,97 @@ class WatershedIdentifier:
 
     def save(self, directory: str, name: str):
         """Pickle the current instance."""
-        now = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+        now = datetime.datetime.now().strftime(DATETIME_FORMAT)
         fp = os.path.join(directory, f"{name}__{now}")
         with open(fp, "wb") as f:
             pickle.dump(self, f)
         return fp
 
 
+def clear_up_gage_tiff_files():
+    """Delete all but the most recent TIFF elevation file for each gage."""
+    tif_dir = os.path.join(DATA_DIR, "gage_tiff_files")
+    files = [f for f in os.listdir(tif_dir) if f.endswith(".tif")]
+    gage_ids = [f.split("_")[0] for f in files]
+    timestamps = [f"2022" + f.split("2022")[-1][:-4] for f in files]
+    timestamps = [datetime.datetime.strptime(ts, DATETIME_FORMAT) for ts in timestamps]
+    df = pd.DataFrame({"file": files, "gage_id": gage_ids, "timestamp": timestamps})
+    df = df.sort_values(by=["gage_id", "timestamp"], ascending=False)
+    df["keep"] = df["gage_id"] != df["gage_id"].shift(-1)
+    delete = df[~df["keep"]]
+    for filename in delete["file"]:
+        fp = os.path.join(tif_dir, filename)
+        os.remove(fp)
+    return delete
+
+
+def clear_up_watershed_files():
+    """Delete all but the most recent watershed file for each gage."""
+    ws_dir = os.path.join(DATA_DIR, "watersheds")
+    files = [f for f in os.listdir(ws_dir) if "__" in f]
+    gage_ids = [f.split("_")[0] for f in files]
+    timestamps = [f"2022" + f.split("2022")[-1] for f in files]
+    timestamps = [datetime.datetime.strptime(ts, DATETIME_FORMAT) for ts in timestamps]
+    df = pd.DataFrame({"file": files, "gage_id": gage_ids, "timestamp": timestamps})
+    df = df.sort_values(by=["gage_id", "timestamp"], ascending=False)
+    df["keep"] = df["gage_id"] != df["gage_id"].shift(-1)
+    delete = df[~df["keep"]]
+    for filename in delete["file"]:
+        fp = os.path.join(ws_dir, filename)
+        os.remove(fp)
+    return delete
+
+
 if __name__ == "__main__":
-    pass  # TODO!
-    # authenticate_gee("capstone-gee-account@snow-capstone.iam.gserviceaccount.com",
-    #                  os.path.join(os.path.expanduser("~"), "snow-capstone-4a3c9603fcf0.json"))
-    #
-    # desc = f"Elevation data export for streamgage {name}"
-    #
-    # while task.status()["state"] != "COMPLETED":
-    #     time.sleep(1)
-    # ws = WatershedIdentifier(tif_fp, lat, lon)
+
+    # Authenticate with service account:
+    service_acct = "capstone-gee-account@snow-capstone.iam.gserviceaccount.com"
+    keys = os.path.join(os.path.expanduser("~"), "snow-capstone-4a3c9603fcf0.json")
+    credentials = authenticate_gee(service_acct, keys)
+
+    gages = pd.read_csv(os.path.join(DATA_DIR, "target_gages.csv"), encoding="utf-8")
+    for ix, row in gages.iterrows():
+
+        lat, lon = row["dec_lat_va"], row["dec_long_va"]
+        name = row["site_no"]
+        print(f"Streamgage: {name}")
+
+        # Radius in metres of the area around the streamgage to get data for.
+        # Start small and increase by 5k each time until full watershed is found:
+        buffer = 10_000
+        catchment_found = False
+
+        while not catchment_found:
+
+            # Export the geotiff to GDrive for the elevation image in the highlighted polygon:
+            task, filename = save_gee_elv_to_drive(lat, lon, name=name, buffer=buffer, scale=30)
+            while task.status()["state"] != "COMPLETED":
+                time.sleep(1)
+            print("TIF file saved to service account G:Drive")
+
+            # Download the file from G:Drive to a local copy:
+            drive = connect_to_service_account_gdrive(keys)
+            save_to = os.path.join(DATA_DIR, "gage_tiff_files")
+            local_files = download_files_from_gdrive(drive, filename, save_to, download_all=True)
+            tif_fp = local_files[0]
+
+            # Delineate the watershed and save it:
+            # This variable moves the streamgage location to a higher accumulation point:
+            min_acc = 1
+            ws = WatershedIdentifier(tif_fp, lat, lon, min_acc)
+            print(ws.summarize_catchment(30))
+
+            # Save the watershed and confirm it can be reloaded:
+            pickled_fp = ws.save(os.path.join(DATA_DIR, "watersheds"), f"{name}")
+
+
+            def pickle_load(fp: str):
+                with open(fp, "rb") as f:
+                    return pickle.load(f)
+
+
+            unpickled_ws = pickle_load(pickled_fp)
+            unpickled_ws.summarize_catchment()
+
+            catchment_found = not ws.catchment_touches_grid_edge
+            buffer += 5_000
