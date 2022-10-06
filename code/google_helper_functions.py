@@ -3,6 +3,7 @@ service accounts."""
 
 import datetime
 import os
+from typing import Tuple
 import warnings
 
 import ee
@@ -11,7 +12,11 @@ import pandas as pd
 import pydrive2
 from pydrive2.auth import GoogleAuth
 from pydrive2.drive import GoogleDrive
+from shapely import geometry
+
 from tqdm import tqdm
+
+from utils import get_polygon, remove_punctuation
 
 DATETIME_FORMAT = "%Y_%m_%d__%H_%M_%S"
 
@@ -85,3 +90,86 @@ def clear_up_service_account_gdrive(drive):
     for drive_file in delete["file"]:
         drive_file.Delete()
     return delete
+
+
+DATE_FORMAT = "%Y_%m_%d"
+
+
+def get_ee_img_collection(sat_name: str, polygon: geometry.Polygon,
+                          date_from: str, date_to: str):
+    """Get ee.ImageCollection for a satellite.
+
+    Args:
+        sat_name: name of satellite in GEE datasets catalog.
+        polygon: geographical region to get data for.
+        date_from: start date for data.
+        date_to: end date for data.
+    """
+    gee_polygon = ee.Geometry.Polygon(list(polygon.boundary.coords))
+    date_from = datetime.datetime.strptime(date_from, DATE_FORMAT)
+    date_to = datetime.datetime.strptime(date_to, DATE_FORMAT)
+    return ee.ImageCollection(sat_name).filterDate(date_from, date_to).filterBounds(gee_polygon)
+
+
+def export_image_collection_to_gdrive(bounding_box: Tuple[float], sat_name: str,
+                                      band: str, date_from: str, date_to: str,
+                                      buffer_percent: float = 0.05,
+                                      crs: str = "epsg:4326",
+                                      scale: float = 100):
+
+    # Define the region of interest:
+    left, bottom, right, top = bounding_box  # NOQA
+    polygon = get_polygon(left, bottom, right, top, buffer_percent=buffer_percent)
+
+    # Get the GEE image collection:
+    ic = get_ee_img_collection(sat_name=sat_name, polygon=polygon, date_from=date_from, date_to=date_to)
+
+    # Number of images to download from the image collection:
+    num_img = ic.size().getInfo()
+    print(f"Satellite {sat_name}: {num_img:,.0f} images")
+
+    # Convert to a list of images:
+    img_list = ic.toList(num_img)
+
+    # Export the images one by one:
+    all_tasks, filenames = list(), list()
+    for i in range(num_img):
+
+        # Select the image:
+        img = ee.Image(img_list.get(i))
+
+        # Date of the image:
+        img_date = img.date().getInfo()  # NOQA
+        hdate = datetime.datetime.utcfromtimestamp(img_date["value"] / 1000).strftime(DATE_FORMAT)
+        print(f"> Task {str(i+1).zfill(7)} - {hdate}")
+
+        # Select a band:
+        img_band = img.select(band)
+
+        # Get the GEE polygon shape
+        gee_polygon = ee.Geometry.Polygon(list(polygon.boundary.coords))
+
+        # Reproject:
+        reprojection = img_band.reproject(crs=crs, scale=scale)
+
+        # Export to G:Drive:
+        sat_name_c = remove_punctuation(sat_name)
+        crs_c = remove_punctuation(crs)
+        band_c = remove_punctuation(band)
+        hdate_c = remove_punctuation(hdate)
+        filename = f"{crs_c}__{scale}__{sat_name_c}__{band_c}__{hdate_c}"
+        task = ee.batch.Export.image.toDrive(
+            reprojection.toFloat(),
+            description=f"Image {filename}",
+            folder=f"{sat_name_c}",
+            fileNamePrefix=filename,
+            region=gee_polygon,
+            fileFormat="GeoTIFF",
+            maxPixels=1e10
+        )
+        task.start()
+
+        all_tasks.append(task)
+        filenames.append(filename)
+
+    return all_tasks, filenames
