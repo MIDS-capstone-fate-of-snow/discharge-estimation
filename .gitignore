@@ -3,6 +3,7 @@
 /data/WBD_National_GDB/WBD_National_GDB.gdb
 /data/test/
 .DS_Store
+code/dev.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
