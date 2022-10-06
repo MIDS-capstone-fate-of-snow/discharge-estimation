@@ -24,6 +24,15 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 * [Deliverables schedule](https://docs.google.com/document/d/1CWLP_c4wEdrYaAs8mT3jkurGmQO50WAOvU2H-OGuPIU/edit)
 * [Class readings](https://docs.google.com/document/d/1KXirHpMz3D0WAwnwFvdO07wTHc-pEa3-EGJJQ5yrFiw/edit#heading=h.k5pp898cixi4)
 
+### Streamgages
+* [11185500](https://waterdata.usgs.gov/nwis/inventory?agency_code=USGS&site_no=11185500)
+* [11189500](https://waterdata.usgs.gov/nwis/inventory?agency_code=USGS&site_no=11189500)
+* [11202710](https://waterdata.usgs.gov/nwis/inventory?agency_code=USGS&site_no=11202710)
+* [11208000](https://waterdata.usgs.gov/nwis/inventory?agency_code=USGS&site_no=11208000)
+* [11266500](https://waterdata.usgs.gov/nwis/inventory?agency_code=USGS&site_no=11266500)
+* [11318500](https://waterdata.usgs.gov/nwis/inventory?agency_code=USGS&site_no=11318500)
+* [11402000](https://waterdata.usgs.gov/nwis/inventory?agency_code=USGS&site_no=11402000)
+
 ### Hydrology
 
 * [_Introduction to Hydrology_ textbook](https://margulis-group.github.io/teaching/)
@@ -33,6 +42,7 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 * [What Are Hydrologic Units?](https://water.usgs.gov/GIS/huc.html)
 * [USGS National Hydrography Products](https://www.usgs.gov/national-hydrography/access-national-hydrography-products)
 * [USGS State Shapefiles](https://prd-tnm.s3.amazonaws.com/index.html?prefix=StagedProducts/Hydrography/NHD/State/Shape/)
+* [How/Why Does the USGS Collect Streamflow Data](https://www.usgs.gov/centers/dakota-water-science-center/howwhy-does-usgs-collect-streamflow-data)
 
 ### Satellite data
 
@@ -58,5 +68,9 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 * [GeoPandas - Plotting polygons with Folium](https://geopandas.org/en/stable/gallery/polygon_plotting_with_folium.html)
 * [pysheds - Python library for calculating watersheds](https://github.com/mdbartos/pysheds)
 * [Transformers in Time Series](https://github.com/qingsongedu/time-series-transformers-review)
-* [Google Earth Engine - Service Account](https://developers.google.com/earth-engine/guides/service_account)
+* **Google Earth Engine**
+  * [Python API](https://developers.google.com/earth-engine/tutorials/community/intro-to-python-api)
+  * [Service Account](https://developers.google.com/earth-engine/guides/service_account)
+  * [Projections](https://developers.google.com/earth-engine/guides/projections)
+  * [Download Image Collection to Drive](https://stackoverflow.com/questions/67289225/download-image-from-google-earth-engine-imagecollection-to-drive)
 * [Working with GeoTIFF files](https://towardsdatascience.com/reading-and-visualizing-geotiff-images-with-python-8dcca7a74510)
