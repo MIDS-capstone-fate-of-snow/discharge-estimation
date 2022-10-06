@@ -2,10 +2,13 @@
 import datetime
 import os
 import re
+import string
 
 import pandas as pd
+from shapely import affinity, geometry
 
 DATETIME_FORMAT = "%Y_%m_%d__%H_%M_%S"
+PUNCTUATION = {p: "_" for p in string.punctuation}
 
 
 def list_streamgage_files(directory: str):
@@ -27,3 +30,23 @@ def get_latest_streamgage_file(directory: str, streamgage: str):
     files_df = files_df[(files_df["gage_id"] == str(streamgage)) & (files_df["latest"] == True)]
     assert len(files_df) == 1, f"No files found for gage: {streamgage}"
     return files_df.iloc[0]["file"]
+
+
+def remove_punctuation(s: str):
+    return s.translate(str.maketrans(PUNCTUATION))
+
+
+def get_polygon(left: float, bottom: float, right: float, top: float, buffer_percent: float = 0.05):
+    coords = [
+        [left, top],
+        [right, top],
+        [right, bottom],
+        [left, bottom],
+        [left, top],
+    ]
+    shape = geometry.Polygon(coords)
+    if buffer_percent > 0:
+        shape = geometry.Polygon(affinity.scale(
+            shape, xfact=(1. + buffer_percent), yfact=(1. + buffer_percent)
+        ).exterior.coords)
+    return shape
