@@ -74,3 +74,4 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
   * [Projections](https://developers.google.com/earth-engine/guides/projections)
   * [Download Image Collection to Drive](https://stackoverflow.com/questions/67289225/download-image-from-google-earth-engine-imagecollection-to-drive)
 * [Working with GeoTIFF files](https://towardsdatascience.com/reading-and-visualizing-geotiff-images-with-python-8dcca7a74510)
+* [USGS Drainage Area Identification](https://streamstats.usgs.gov/ss/)
