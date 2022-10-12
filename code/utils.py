@@ -1,9 +1,11 @@
 
 import datetime
+import json
 import os
 import re
 import string
 
+import folium
 import pandas as pd
 from shapely import affinity, geometry
 
@@ -50,3 +52,37 @@ def get_polygon(left: float, bottom: float, right: float, top: float, buffer_per
             shape, xfact=(1. + buffer_percent), yfact=(1. + buffer_percent)
         ).exterior.coords)
     return shape
+
+
+def fmap(*lat_lon: tuple, labels: list = None, zoom_start: int = 14):
+    """Folium map of lat-lon coordinates.
+
+    Args:
+        lat_lon: tuple of latitude, longitude.
+        labels: optional marker labels (length should match lat_lon if passed).
+        zoom_start: passed to folium.Map
+    """
+    first_lat, first_lon = lat_lon[0]
+    my_map = folium.Map(location=[first_lat, first_lon], zoom_start=zoom_start)
+    for i, (lat, lon) in enumerate(lat_lon):
+        if labels is None:
+            folium.Marker(location=[lat, lon], radius=10).add_to(my_map)
+        else:
+            folium.Marker(location=[lat, lon], radius=10, popup=labels[i]).add_to(my_map)
+    return my_map
+
+
+def update_json(fp: str, key: str, value: object):
+    if not os.path.exists(fp):
+        data = dict()
+        with open(fp, "w") as f:
+            json.dump(data, f)
+
+    with open(fp, "r") as f:
+        data = json.load(f)
+        data[key] = value
+
+    with open(fp, "w") as f:
+        json.dump(data, f)
+
+    print(f"Updated JSON file {fp}:\n  key = {str(key)}\n  value = {str(value)}")

@@ -1,4 +1,4 @@
-"""Method to identify the upstream watershed from a given lat-long point."""
+"""Class to identify the upstream watershed from a given lat-long point."""
 
 import datetime
 import os
@@ -324,6 +324,17 @@ class WatershedIdentifier:
             pickle.dump(self, f)
         return fp
 
+    def map_latlons(self, zoom_start: int = 14):
+        """Folium map of the original and snapped lat-lon coordinates."""
+        my_map = folium.Map(location=[self.lat, self.lon], zoom_start=zoom_start)
+        folium.Marker(location=[self.lat, self.lon],
+                      radius=10, popup=f"ORIGINAL ({self.lat}, {self.lon})",
+                      icon=folium.Icon(color="blue")).add_to(my_map)
+        folium.Marker(location=[self.snap_lat, self.snap_lon],
+                      radius=10, popup=f"SNAPPED ({self.snap_lat}, {self.snap_lon})",
+                      icon=folium.Icon(color="red")).add_to(my_map)
+        return my_map
+
 
 def clear_up_gage_tiff_files():
     """Delete all but the most recent TIFF elevation file for each gage."""
@@ -369,37 +380,37 @@ if __name__ == "__main__":
     gages = pd.read_csv(os.path.join(DATA_DIR, "target_gages.csv"), encoding="utf-8")
     for ix, row in gages.iterrows():
 
-        lat, lon = row["dec_lat_va"], row["dec_long_va"]
-        name = row["site_no"]
-        print(f"Streamgage: {name}")
+        gage_lat, gage_lon = row["dec_lat_va"], row["dec_long_va"]
+        gage_name = row["site_no"]
+        print(f"Streamgage: {gage_name}")
 
         # Radius in metres of the area around the streamgage to get data for.
         # Start small and increase by 5k each time until full watershed is found:
-        buffer = 10_000
+        radius = 10_000
         catchment_found = False
 
         while not catchment_found:
 
             # Export the geotiff to GDrive for the elevation image in the highlighted polygon:
-            task, filename = save_gee_elv_to_drive(lat, lon, name=name, buffer=buffer, scale=30)
-            while task.status()["state"] != "COMPLETED":
+            gd_task, gd_filename = save_gee_elv_to_drive(gage_lat, gage_lon, name=gage_name, buffer=radius, scale=30)
+            while gd_task.status()["state"] != "COMPLETED":
                 time.sleep(1)
             print("TIF file saved to service account G:Drive")
 
             # Download the file from G:Drive to a local copy:
             drive = connect_to_service_account_gdrive(keys)
             save_to = os.path.join(DATA_DIR, "gage_tiff_files")
-            local_files = download_files_from_gdrive(drive, filename, save_to, download_all=True)
-            tif_fp = local_files[0]
+            local_files = download_files_from_gdrive(drive, gd_filename, save_to, download_all=True)
+            elv_tif_fp = local_files[0]
 
             # Delineate the watershed and save it:
             # This variable moves the streamgage location to a higher accumulation point:
-            min_acc = 1
-            ws = WatershedIdentifier(tif_fp, lat, lon, min_acc)
+            ws_min_acc = 1
+            ws = WatershedIdentifier(elv_tif_fp, gage_lat, gage_lon, ws_min_acc)
             print(ws.summarize_catchment(30))
 
             # Save the watershed and confirm it can be reloaded:
-            pickled_fp = ws.save(os.path.join(DATA_DIR, "watersheds"), f"{name}")
+            pickled_fp = ws.save(os.path.join(DATA_DIR, "watersheds"), f"{gage_name}")
 
 
             def pickle_load(fp: str):
@@ -411,4 +422,4 @@ if __name__ == "__main__":
             unpickled_ws.summarize_catchment()
 
             catchment_found = not ws.catchment_touches_grid_edge
-            buffer += 5_000
+            radius += 5_000
