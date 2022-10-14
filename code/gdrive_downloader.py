@@ -5,7 +5,6 @@ import time
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 from utils import remove_punctuation
 
@@ -16,13 +15,15 @@ class GDriveFileDownloader:
     """Class for downloading files on GDrive to the local machine."""
 
     def __init__(self, key_fp: str, local_dir: str):
-        self.drive = connect_to_service_account_gdrive(key_fp)
+        assert os.path.exists(key_fp), f"Invalid filepath: {key_fp}"
+        self.key_fp = key_fp
         assert os.path.isdir(local_dir), f"Not a directory: {local_dir}"
         self.local_dir = local_dir
 
     @property
     def undeleted_gdrive_files(self):
-        file_list = self.drive.ListFile({"q": f"trashed=false"}).GetList()
+        drive = connect_to_service_account_gdrive(self.key_fp)
+        file_list = drive.ListFile({"q": f"trashed=false"}).GetList()
         if len(file_list):
             file_df = pd.DataFrame([dict(f) for f in file_list])
             file_df["file"] = file_list
@@ -92,19 +93,20 @@ class GDriveFileDownloader:
         """
         file_df = self.to_download(file_extensions)
         downloaded, deleted, skipped = list(), list(), list()
-        for ix in tqdm(list(file_df.index)):
-            row = file_df.loc[ix]
-            title = row["title"]
-            target_fp = self.target_filepath(title, allow_duplicates=allow_duplicates)
-            if target_fp is not None:
-                gdrive_file_object = row["file"]
-                gdrive_file_object.GetContentFile(target_fp)
-                downloaded.append(target_fp)
-                if delete:
-                    gdrive_file_object.Delete()
-                    deleted.append(row["originalFilename"])
-            else:
-                skipped.append({"title": title, "originalFilename": row["originalFilename"]})
+        if len(file_df):
+            for ix in list(file_df.index):
+                row = file_df.loc[ix]
+                title = row["title"]
+                target_fp = self.target_filepath(title, allow_duplicates=allow_duplicates)
+                if target_fp is not None:
+                    gdrive_file_object = row["file"]
+                    gdrive_file_object.GetContentFile(target_fp)
+                    downloaded.append(target_fp)
+                    if delete:
+                        gdrive_file_object.Delete()
+                        deleted.append(row["originalFilename"])
+                else:
+                    skipped.append({"title": title, "originalFilename": row["originalFilename"]})
 
         return {"downloaded": downloaded, "deleted": deleted, "skipped": skipped}
 

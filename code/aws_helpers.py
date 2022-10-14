@@ -8,17 +8,21 @@ from botocore.exceptions import ClientError
 from logger import logging
 
 
-def upload_file_to_s3(fp: str, bucket: str, object_name: str = None) -> bool:
+def upload_file_to_s3(fp: str, bucket: str, object_name: str = None,
+                      s3_directory: str = None) -> bool:
     """Upload a file to an S3 bucket
 
     Args:
         fp: path to local file to upload.
         bucket: S3 bucket to upload to.
         object_name: S3 object name. If not specified then file_name is used.
+        s3_directory: optional subdirectory in S3 to save to.
     """
     # If S3 object_name was not specified, use file_name:
     if object_name is None:
         object_name = os.path.basename(fp)
+    if s3_directory is not None:
+        object_name = f"{s3_directory}/{object_name}"
 
     # Upload the file:
     s3_client = boto3.client("s3")
@@ -63,14 +67,14 @@ class S3Uploader:
         logging.info(msg)
         print(msg)
 
-    def __call__(self):
+    def __call__(self, s3_directory: str = None):
         while True:
             local_files = self.list_local_files
             if len(local_files):
                 for filename in local_files:
                     fp = self.make_filepath(filename)
                     object_name = f"{self.test_file_prefix}{filename}"
-                    upload_file_to_s3(fp, self.bucket, object_name)
+                    upload_file_to_s3(fp, self.bucket, object_name, s3_directory)
                     msg = f"{self.test_msg_prefix}Uploaded local file to S3: {object_name}"
                     logging.info(msg)
                     print(msg)
@@ -101,4 +105,4 @@ if __name__ == "__main__":
             pass
 
     s3uploader = S3Uploader(test_directory, "txt", bucket="w210-snow-fate", test=False)
-    s3uploader()
+    s3uploader(s3_directory="test")
