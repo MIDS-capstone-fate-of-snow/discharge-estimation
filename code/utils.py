@@ -5,8 +5,10 @@ import os
 import re
 import string
 
+from bs4 import BeautifulSoup
 import folium
 import pandas as pd
+import requests
 from shapely import affinity, geometry
 
 DATETIME_FORMAT = "%Y_%m_%d__%H_%M_%S"
@@ -86,3 +88,14 @@ def update_json(fp: str, key: str, value: object):
         json.dump(data, f)
 
     print(f"Updated JSON file {fp}:\n  key = {str(key)}\n  value = {str(value)}")
+
+
+def get_usgs_site_info(gage: str):
+    """Get the full site location information from the USGS website."""
+    url = f"https://waterdata.usgs.gov/nwis/wys_rpt/?site_no={gage}&agency_cd=USGS"
+    r = requests.get(url)
+    soup = BeautifulSoup(r.content, "html.parser")
+    full_title = soup.find_all("div", {"id": "station_full_nm"})[0].contents[0]
+    location = soup.find_all("div", {"id": "location"})[0].contents[1]
+    area = soup.find_all("div", {"id": "drainage_area"})[0].contents[1]
+    return {"full_title": full_title, "location": f"LOCATION{location}", "area": f"DRAINAGE AREA{area}"}

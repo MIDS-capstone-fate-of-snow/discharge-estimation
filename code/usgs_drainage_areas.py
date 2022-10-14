@@ -17,6 +17,8 @@ class USGSDrainageArea:
         self.shape = self.gdf[self.gdf["id"] == "globalwatershed"]["geometry"].iloc[0]
         self.bounding_box = self.shape.bounds
         self.min_lon, self.min_lat, self.max_lon, self.max_lat = self.bounding_box
+        self.box_centroid = self.shape.centroid
+        self.centroid_lon, self.centroid_lat = self.box_centroid.coords.xy[0][0], self.box_centroid.coords.xy[1][0]
 
         # Calculate area:
         geo_series = self.gdf["geometry"].to_crs({"proj": "cea"})
@@ -24,9 +26,12 @@ class USGSDrainageArea:
         self.area_km = self.area_m / 10 ** 6
         self.area_miles = self.area_km * 0.386102
 
-    def fmap(self, zoom_start: int = 10, width="100%", height="100%"):
+    def fmap(self, zoom_start: int = 10, width="100%", height="100%",
+             my_map=None):
         """Create a folium map of the drainage area."""
-        my_map = folium.Map(location=[self.lat, self.lon], zoom_start=zoom_start, width=width, height=height)
+        if my_map is None:
+            my_map = folium.Map(location=[self.centroid_lat, self.centroid_lon],
+                                zoom_start=zoom_start, width=width, height=height)
 
         # Map the point:
         folium.Marker(location=[self.lat, self.lon], radius=10,
