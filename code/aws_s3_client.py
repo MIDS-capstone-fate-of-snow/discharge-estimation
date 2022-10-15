@@ -1,9 +1,11 @@
 
+import datetime
 import os
 import time
 
 import boto3
 from botocore.exceptions import ClientError
+import pandas as pd
 
 from logger import logging
 
@@ -33,26 +35,58 @@ def upload_file_to_s3(fp: str, bucket: str, object_name: str = None,
         return False
 
 
-class S3Uploader:
+class S3Client:
 
-    def __init__(self, directory: str, file_ext: str, bucket: str,
-                 test: bool = True):
+    def __init__(self, directory: str, bucket: str, test: bool = True):
         assert os.path.isdir(directory), f"Invalid directory path: {directory}"
         self.directory = directory
-        self.file_ext = file_ext
         self.bucket = bucket
         self.test = test
         self.test_file_prefix = "TEST__" if self.test else ""
         self.test_msg_prefix = "(TEST) " if self.test else ""
         self.test_deleted = list()
 
+    def list_bucket(self, directory_name: str = None):
+        """List files in the S3 bucket."""
+        s3 = boto3.resource("s3")
+        bucket = s3.Bucket(self.bucket)
+        if directory_name is not None:
+            objects = bucket.objects.filter(Prefix=f"{directory_name}/")
+        else:
+            objects = bucket.objects.all()
+        names = [o.key for o in objects]
+        modified_dates = [o.last_modified for o in objects]
+        df = pd.DataFrame({"filepath": names, "last_modified_date": modified_dates})
+        df["filename"] = [fn.split("/")[-1] for fn in df["filepath"]]
+        df["filename_prefix"] = [fn.split(".")[0] for fn in df["filename"]]
+        df["filename_ext"] = [fn.split(".")[-1] for fn in df["filename"]]
+        return df
+
+    def filenames_in_bucket(self, filenames: list,
+                            from_time: datetime.datetime = None,
+                            directory_name: str = None) -> bool:
+        """Check all filenames are in the S3 bucket.
+
+        Args:
+            filenames: filenames with file extensions.
+            from_time: optional minimum time when files were last modified.
+            directory_name: optional S3 directory name to limit search to.
+        """
+        df = self.list_bucket(directory_name=directory_name)
+        if from_time is not None:
+            df = df[df["last_modified_date"] >= from_time]
+        missing = set(filenames) - set(df["filename"])
+        return not len(missing)
+
     def make_filepath(self, filename: str):
         return os.path.join(self.directory, filename)
 
-    @property
-    def list_local_files(self):
+    def list_local_files(self, file_ext: str = None):
         files = os.listdir(self.directory)
-        files = list(filter(lambda fn: fn.endswith(f".{self.file_ext}"), files))
+        # Skip part files:
+        files = [f for f in files if not f.endswith(".part")]  # NOQA
+        if file_ext is not None:
+            files = list(filter(lambda fn: fn.endswith(f".{file_ext}"), files))
         if self.test:
             files = list(set(files) - set(self.test_deleted))
         return files
@@ -67,9 +101,9 @@ class S3Uploader:
         logging.info(msg)
         print(msg)
 
-    def __call__(self, s3_directory: str = None):
+    def __call__(self, s3_directory: str = None, file_ext: str = None):
         while True:
-            local_files = self.list_local_files
+            local_files = self.list_local_files(file_ext=file_ext)
             if len(local_files):
                 for filename in local_files:
                     fp = self.make_filepath(filename)
@@ -104,5 +138,5 @@ if __name__ == "__main__":
         with open(test_fp, "w") as f:
             pass
 
-    s3uploader = S3Uploader(test_directory, "txt", bucket="w210-snow-fate", test=False)
-    s3uploader(s3_directory="test")
+    s3uploader = S3Client(test_directory, bucket="w210-snow-fate", test=False)
+    s3uploader(s3_directory="test", file_ext="txt")

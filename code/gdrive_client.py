@@ -1,6 +1,7 @@
 """Class for working with GDrive to download files to local."""
 
 import os
+import shutil
 import time
 
 import numpy as np
@@ -11,18 +12,33 @@ from utils import remove_punctuation
 from google_helper_functions import connect_to_service_account_gdrive
 
 
-class GDriveFileDownloader:
-    """Class for downloading files on GDrive to the local machine."""
+class GDriveClient:
+    """Class for managing files on GDrive."""
 
     def __init__(self, key_fp: str, local_dir: str):
         assert os.path.exists(key_fp), f"Invalid filepath: {key_fp}"
         self.key_fp = key_fp
         assert os.path.isdir(local_dir), f"Not a directory: {local_dir}"
         self.local_dir = local_dir
+        self._downloaded = list()
+        self._deleted = list()
+        self._callback = None
 
     @property
-    def undeleted_gdrive_files(self):
-        drive = connect_to_service_account_gdrive(self.key_fp)
+    def downloaded(self):
+        return pd.DataFrame(self._downloaded)
+
+    @property
+    def deleted(self):
+        return pd.DataFrame(self._deleted)
+
+    def connect(self):
+        """Returns a connection to the GDrive."""
+        return connect_to_service_account_gdrive(self.key_fp)
+
+    @property
+    def undeleted_files(self):
+        drive = self.connect()
         file_list = drive.ListFile({"q": f"trashed=false"}).GetList()
         if len(file_list):
             file_df = pd.DataFrame([dict(f) for f in file_list])
@@ -30,18 +46,29 @@ class GDriveFileDownloader:
         else:
             # Construct an empty dataframe so no errors raised elsewhere:
             file_df = pd.DataFrame()
-        for mandatory_column in ["title", "fileExtension", "file", "originalFilename"]:
+        for mandatory_column in ["title", "fileExtension", "file", "originalFilename", "fileSize", "webContentLink"]:
             if mandatory_column not in file_df.columns:
                 file_df[mandatory_column] = np.nan
         return file_df
+
+    def delete_all_files(self):
+        """Delete all files currently in the GDrive."""
+        files = self.undeleted_files
+        for f in files["file"]:
+            f.Delete()
+        return files
 
     @property
     def local_files(self):
         return os.listdir(self.local_dir)
 
     def to_download(self, file_extensions: list = ("tif", )):
-        file_df = self.undeleted_gdrive_files
-        file_df = file_df[file_df["fileExtension"].isin(file_extensions)]
+        file_df = self.undeleted_files
+        file_df = file_df[
+            (file_df["fileExtension"].isin(file_extensions)) &
+            (file_df["fileSize"].astype(float) > 0) &
+            (file_df["webContentLink"].notna())
+            ]
         return file_df
 
     def target_filepath(self, filename: str, allow_duplicates: bool = True,
@@ -77,7 +104,7 @@ class GDriveFileDownloader:
 
         return os.path.join(self.local_dir, filename)
 
-    def download_from_gdrive(self, file_extensions: list = ("tif", ),
+    def download_by_file_ext(self, file_extensions: list = ("tif",),
                              allow_duplicates: bool = True,
                              delete: bool = False):
         """Download files with specific file extensions from GDrive.
@@ -92,28 +119,42 @@ class GDriveFileDownloader:
             Dict of GDrive files downloaded, deleted, and skipped.
         """
         file_df = self.to_download(file_extensions)
-        downloaded, deleted, skipped = list(), list(), list()
+        skipped = list()
         if len(file_df):
             for ix in list(file_df.index):
+                self._callback = None
                 row = file_df.loc[ix]
                 title = row["title"]
                 target_fp = self.target_filepath(title, allow_duplicates=allow_duplicates)
                 if target_fp is not None:
+                    part_fp = f"{target_fp}.part"
+
+                    def callback(total_transferred, file_size):
+                        """Log the file size of the downloaded file; used to
+                        identify when the file has finished downloading."""
+                        self._callback = total_transferred, file_size
+
                     gdrive_file_object = row["file"]
-                    gdrive_file_object.GetContentFile(target_fp)
-                    downloaded.append(target_fp)
+                    gdrive_file_object.GetContentFile(part_fp, callback=callback)
+                    while self._callback is None:
+                        time.sleep(0.1)  # Wait until file finishes downloading before removing .part extension
+                    shutil.move(part_fp, target_fp)
+                    metadata = dict(gdrive_file_object)
+                    metadata["target_fp"] = target_fp
+                    metadata["timestamp"] = time.time()
+                    self._downloaded.append(metadata)
                     if delete:
                         gdrive_file_object.Delete()
-                        deleted.append(row["originalFilename"])
+                        self._deleted.append(metadata)
                 else:
                     skipped.append({"title": title, "originalFilename": row["originalFilename"]})
 
-        return {"downloaded": downloaded, "deleted": deleted, "skipped": skipped}
+        return {"skipped": skipped}
 
     def __call__(self, file_extensions: list = ("tif", ),
                  allow_duplicates: bool = True, delete: bool = True,
                  sleep: int = 1):
         while True:
-            self.download_from_gdrive(file_extensions=file_extensions,
+            self.download_by_file_ext(file_extensions=file_extensions,
                                       allow_duplicates=allow_duplicates, delete=delete)
             time.sleep(sleep)
