@@ -10,6 +10,9 @@ import pandas as pd
 from logger import logging
 
 
+DATE_FORMAT = "%Y_%m_%d"
+
+
 def upload_file_to_s3(fp: str, bucket: str, object_name: str = None,
                       s3_directory: str = None) -> bool:
     """Upload a file to an S3 bucket
@@ -100,6 +103,44 @@ class S3Client:
         msg = f"{self.test_msg_prefix}Deleted local file: {fp}"
         logging.info(msg)
         print(msg)
+
+    def list_gee_tif_files(self, directory_name: str = None):
+        """List all GeoTiff files saved in S3 from GEE, with specific filename
+        formats."""
+        df = self.list_bucket(directory_name)
+        df = df[df["filename_ext"] == "tif"]
+        filename_parts = ["crs", "scale", "satellite", "band", "date"]
+        for i, part in enumerate(filename_parts):  # NOQA
+            df[part] = df["filename_prefix"].map(lambda s: s.split("__")[i])
+        df["scale"] = df["scale"].str.replace("_", ".").astype(float)
+        df["date"] = pd.to_datetime(df["date"], format=DATE_FORMAT)
+        return df
+
+    def download_to_local(self, *filename, skip_existing: bool = True):
+        """Download files from the S3 bucket to the local directory.
+
+        Args:
+            filename: full S3 filename including subdirectories.
+            skip_existing: if True, skip files which already exist locally.
+        """
+        files = list(set(filename))
+
+        s3 = boto3.client("s3")
+        for fname in files:
+            subdirectories = fname.split("/")
+            base_dir = self.directory
+            # Create sub-directories locally if they don't exist:
+            for subdir in subdirectories[:-1]:
+                base_dir = os.path.join(base_dir, subdir)
+                if not os.path.exists(base_dir):
+                    os.mkdir(base_dir)
+            local_fname = fname.split("/")[-1]
+            target = os.path.join(base_dir, local_fname)
+            if skip_existing and os.path.exists(target):
+                pass
+            else:
+                s3.download_file(Bucket=self.bucket, Key=fname, Filename=target)
+                print(f"Downloaded S3 file to: {target}")
 
     def __call__(self, s3_directory: str = None, file_ext: str = None):
         while True:
