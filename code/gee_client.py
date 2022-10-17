@@ -48,7 +48,7 @@ class GEEClient:
                             band: str, date_from: str, date_to: str,
                             buffer_percent: float = 0.05,
                             crs: str = "epsg:4326",
-                            scale: float = 100) -> None:
+                            scale: float = None) -> None:
         """Export all files in an Image Collection to GDrive.
 
         Args:
@@ -59,7 +59,7 @@ class GEEClient:
             date_to: end date to get images to.
             buffer_percent: percent of bounding box area to add as buffer.
             crs: coordinate reference system.
-            scale: desired image resolution.
+            scale: optional desired image resolution, otherwise default is used.
         """
         # Define the region of interest:
         left, bottom, right, top = bounding_box  # NOQA
@@ -89,6 +89,10 @@ class GEEClient:
             # Select a band:
             img_band = img.select(band)
 
+            # Get the original scale if not rescaling:
+            if scale is None:
+                scale = img_band.projection().nominalScale().getInfo()
+
             # Get the GEE polygon shape
             gee_polygon = ee.Geometry.Polygon(list(polygon.boundary.coords))
 
@@ -100,7 +104,8 @@ class GEEClient:
             crs_c = remove_punctuation(crs)
             band_c = remove_punctuation(band)
             hdate_c = remove_punctuation(hdate)
-            filename = f"{crs_c}__{scale}__{sat_name_c}__{band_c}__{hdate_c}"
+            scale_c = remove_punctuation(f"{scale:.2f}")
+            filename = f"{crs_c}__{scale_c}__{sat_name_c}__{band_c}__{hdate_c}"
             task = ee.batch.Export.image.toDrive(
                 reprojection.toFloat(),
                 description=f"Image {filename}",
