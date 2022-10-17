@@ -48,7 +48,7 @@ class GEEClient:
                             band: str, date_from: str, date_to: str,
                             buffer_percent: float = 0.05,
                             crs: str = "epsg:4326",
-                            scale: float = None) -> None:
+                            scale: float = None, hourly: bool = False) -> None:
         """Export all files in an Image Collection to GDrive.
 
         Args:
@@ -60,6 +60,7 @@ class GEEClient:
             buffer_percent: percent of bounding box area to add as buffer.
             crs: coordinate reference system.
             scale: optional desired image resolution, otherwise default is used.
+            hourly: if True, append the hour to the datetime for hourly data.
         """
         # Define the region of interest:
         left, bottom, right, top = bounding_box  # NOQA
@@ -99,6 +100,9 @@ class GEEClient:
 
             # Reproject:
             reprojection = img_band.reproject(crs=crs, scale=scale)
+            if hourly:
+                hour = reprojection.getInfo()["properties"]["hour"]
+                hdate = hdate + "_" + f"{hour}".zfill(2)
 
             # Export to G:Drive:
             sat_name_c = remove_punctuation(sat_name)
