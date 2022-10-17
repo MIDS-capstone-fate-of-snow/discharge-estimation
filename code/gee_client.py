@@ -92,6 +92,7 @@ class GEEClient:
             # Get the original scale if not rescaling:
             if scale is None:
                 scale = img_band.projection().nominalScale().getInfo()
+            assert isinstance(scale, float)
 
             # Get the GEE polygon shape
             gee_polygon = ee.Geometry.Polygon(list(polygon.boundary.coords))

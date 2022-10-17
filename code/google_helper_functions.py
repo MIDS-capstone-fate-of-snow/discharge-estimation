@@ -105,6 +105,7 @@ def get_ee_img_collection(sat_name: str, polygon: geometry.Polygon,
         date_from: start date for data.
         date_to: end date for data.
     """
+    raise DeprecationWarning()
     gee_polygon = ee.Geometry.Polygon(list(polygon.boundary.coords))
     date_from = datetime.datetime.strptime(date_from, DATE_FORMAT)
     date_to = datetime.datetime.strptime(date_to, DATE_FORMAT)
@@ -116,6 +117,7 @@ def export_image_collection_to_gdrive(bounding_box: Tuple[float], sat_name: str,
                                       buffer_percent: float = 0.05,
                                       crs: str = "epsg:4326",
                                       scale: float = None):
+    raise DeprecationWarning()
 
     # Define the region of interest:
     left, bottom, right, top = bounding_box  # NOQA

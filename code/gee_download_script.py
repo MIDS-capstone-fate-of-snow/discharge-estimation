@@ -22,16 +22,18 @@ GDRIVE_KEYS = os.path.join(os.path.expanduser("~"), "snow-capstone-4a3c9603fcf0.
 BUCKET = "w210-snow-fate"
 SERVICE_ACCOUNT = "capstone-gee-account@snow-capstone.iam.gserviceaccount.com"
 BOUNDING_BOX = (-119.67587142994948, 37.5937475200786, -119.25727819655671, 37.90260095290917)
-DATE_FROM = "2020_01_01"
-DATE_TO = "2020_12_31"
+DATE_FROM = "2010_01_01"
+DATE_TO = "2019_12_31"
 BUFFER_PERCENT = 0.05
 CRS = "epsg:4326"
-SCALE = 100
+SCALE = None  # None means don't rescale.
 SAT_BANDS = [
     ("MODIS/006/MOD16A2", "ET"),
 ]
 
 if __name__ == "__main__":
+
+    t1 = time.time()  # Runtime timer.
 
     start_time = datetime.datetime.now(datetime.timezone.utc)
 
@@ -71,4 +73,6 @@ if __name__ == "__main__":
 
     process_s3.kill()
     process_gd.kill()
-    print("Finished")
+
+    elapsed_time = time.time() - t1
+    print(f"Finished - elapsed_time = {elapsed_time:,.2f} seconds")
