@@ -58,6 +58,14 @@ class GDriveClient:
             f.Delete()
         return files
 
+    def delete_by_title(self, *title: str):
+        """Delete GDrive files matching titles."""
+        files = self.undeleted_files
+        files = files[files["title"].isin(list(title))]
+        for f in files["file"]:
+            f.Delete()
+        return files
+
     @property
     def local_files(self):
         return os.listdir(self.local_dir)
@@ -104,21 +112,8 @@ class GDriveClient:
 
         return os.path.join(self.local_dir, filename)
 
-    def download_by_file_ext(self, file_extensions: list = ("tif",),
-                             allow_duplicates: bool = True,
-                             delete: bool = False):
-        """Download files with specific file extensions from GDrive.
-
-        Args:
-            file_extensions: extensions of files to download.
-            allow_duplicates: if False and filename already exists locally don't
-                download again. If True a version number will be appended.
-            delete: if True, delete the source file from GDrive after download.
-
-        Returns:
-            Dict of GDrive files downloaded, deleted, and skipped.
-        """
-        file_df = self.to_download(file_extensions)
+    def _download(self, file_df: pd.DataFrame, allow_duplicates: bool = True,
+                  delete: bool = False):
         skipped = list()
         if len(file_df):
             for ix in list(file_df.index):
@@ -150,6 +145,40 @@ class GDriveClient:
                     skipped.append({"title": title, "originalFilename": row["originalFilename"]})
 
         return {"skipped": skipped}
+
+    def download_by_file_ext(self, file_extensions: list = ("tif",),
+                             allow_duplicates: bool = True,
+                             delete: bool = False):
+        """Download files with specific file extensions from GDrive.
+
+        Args:
+            file_extensions: extensions of files to download.
+            allow_duplicates: if False and filename already exists locally don't
+                download again. If True a version number will be appended.
+            delete: if True, delete the source file from GDrive after download.
+
+        Returns:
+            Dict of GDrive files downloaded, deleted, and skipped.
+        """
+        file_df = self.to_download(file_extensions)
+        return self._download(file_df, allow_duplicates, delete)
+
+    def download_by_title(self, *title: str, allow_duplicates: bool = True,
+                          delete: bool = False):
+        """Download files with specific titles from GDrive.
+
+        Args:
+            title: title of files to download.
+            allow_duplicates: if False and filename already exists locally don't
+                download again. If True a version number will be appended.
+            delete: if True, delete the source file from GDrive after download.
+
+        Returns:
+            Dict of GDrive files skipped.
+        """
+        file_df = self.undeleted_files
+        file_df = file_df[file_df["title"].isin(list(title))]
+        return self._download(file_df, allow_duplicates, delete)
 
     def __call__(self, file_extensions: list = ("tif", ),
                  allow_duplicates: bool = True, delete: bool = True,

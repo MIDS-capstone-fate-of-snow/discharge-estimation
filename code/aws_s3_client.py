@@ -109,10 +109,13 @@ class S3Client:
         formats."""
         df = self.list_bucket(directory_name)
         df = df[df["filename_ext"] == "tif"]
-        filename_parts = ["crs", "scale", "satellite", "band", "date"]
+        filename_parts = ["crs", "scale", "satellite", "band"]
         for i, part in enumerate(filename_parts):  # NOQA
             df[part] = df["filename_prefix"].map(lambda s: s.split("__")[i])
         df["scale"] = df["scale"].str.replace("_", ".").astype(float)
+        dates = df["filename_prefix"].map(lambda s: s.split("__")[-1])
+        # Remove version numbers and hours if present:
+        df["date"] = dates.map(lambda s: s[:10])
         df["date"] = pd.to_datetime(df["date"], format=DATE_FORMAT)
         return df
 
