@@ -145,7 +145,8 @@ class S3Client:
                 s3.download_file(Bucket=self.bucket, Key=fname, Filename=target)
                 print(f"Downloaded S3 file to: {target}")
 
-    def __call__(self, s3_directory: str = None, file_ext: str = None):
+    def __call__(self, s3_directory: str = None, file_ext: str = None,
+                 delete_local: bool = True):
         while True:
             local_files = self.list_local_files(file_ext=file_ext)
             if len(local_files):
@@ -154,9 +155,11 @@ class S3Client:
                     object_name = f"{self.test_file_prefix}{filename}"
                     upload_file_to_s3(fp, self.bucket, object_name, s3_directory)
                     msg = f"{self.test_msg_prefix}Uploaded local file to S3: {object_name}"
+                    if delete_local:
+                        self.delete_local_file(filename)
+                        msg = f"{msg} (deleted from local)"
                     logging.info(msg)
                     print(msg)
-                    self.delete_local_file(filename)
             else:
                 time.sleep(1)
 

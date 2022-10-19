@@ -28,7 +28,7 @@ class GEEClient:
     @staticmethod
     def get_img_collection(sat_name: str, polygon: geometry.Polygon,
                            date_from: str, date_to: str,
-                           band: str = None) -> ee.ImageCollection:
+                           band: str = None, **filters) -> ee.ImageCollection:
         """Get ee.ImageCollection for a satellite.
 
         Args:
@@ -37,6 +37,8 @@ class GEEClient:
             date_from: start date for data.
             date_to: end date for data.
             band: optional satellite band to select.
+            filters: key-value pairs of additional filters to apply to
+                properties of ImageCollection (e.g. hour from hourly datasets).
 
         Returns:
             ee.ImageCollection
@@ -47,13 +49,16 @@ class GEEClient:
         ic = ee.ImageCollection(sat_name).filterDate(date_from, date_to).filterBounds(gee_polygon)
         if band is not None:
             ic = ic.select(band)
+        for key, value in filters.items():
+            ic = ic.filter(ee.Filter.eq(key, value))
         return ic
 
     def export_ic_to_gdrive(self, bounding_box: Tuple, sat_name: str,
                             band: str, date_from: str, date_to: str,
                             buffer_percent: float = 0.05,
                             crs: str = "epsg:4326",
-                            scale: float = None, hourly: bool = False) -> None:
+                            scale: float = None, hourly: bool = False,
+                            **filters) -> None:
         """Export all files in an Image Collection to GDrive.
 
         Args:
@@ -66,6 +71,8 @@ class GEEClient:
             crs: coordinate reference system.
             scale: optional desired image resolution, otherwise default is used.
             hourly: if True, append the hour to the datetime for hourly data.
+            filters: key-value pairs of additional filters to apply to
+                properties of ImageCollection (e.g. hour from hourly datasets).
         """
         # Define the region of interest:
         left, bottom, right, top = bounding_box  # NOQA
@@ -73,7 +80,8 @@ class GEEClient:
         gee_polygon = ee.Geometry.Polygon(list(polygon.boundary.coords))
 
         # Get the GEE image collection:
-        ic = self.get_img_collection(sat_name=sat_name, polygon=polygon, date_from=date_from, date_to=date_to)
+        ic = self.get_img_collection(sat_name=sat_name, polygon=polygon,
+                                     date_from=date_from, date_to=date_to, **filters)
 
         # Number of images to download from the image collection:
         num_img = ic.size().getInfo()  # NOQA
