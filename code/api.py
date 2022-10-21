@@ -57,8 +57,9 @@ class DataAPI:
                        date_from: str, date_to: str,
                        delete_local: bool = False,
                        local_subdir: str = None, to_s3: bool = True,
-                       s3_dir: str = None, crs: str = "epsg:4326",
+                       s3_dir: str = None, crs: str = None,
                        buffer_percent: float = 0.05, scale: float = None,
+                       hourly: bool = False, h_d_agg: str = None,
                        **filters):
         """Spawn the following processes to scrape GEE for satellite images:
             1. Send requests to GEE for images meeting criteria;
@@ -78,8 +79,13 @@ class DataAPI:
             to_s3: if True, upload files to S3, else just keep locally.
             s3_dir: if uploading to S3, optional sub-directory to save to.
             buffer_percent: percent of bounding box area to add as buffer.
-            crs: coordinate reference system.
-            scale: optional desired image resolution, otherwise default is used.
+            crs: optional coordinate reference system, otherwise the satellite
+                band's default is used.
+            scale: optional desired image resolution, otherwise the satellite
+                band's default is used.
+            hourly: if True, append hour to file date stamp for hourly data.
+            h_d_agg: optional agg function to convert hourly data to daily;
+                either `mean` or `sum`.
             filters: key-value pairs of additional filters to apply to
                 properties of ImageCollection (e.g. hour from hourly datasets).
         """
@@ -114,7 +120,7 @@ class DataAPI:
         # Create tasks for satellite-band to download to GDrive:
         gee.export_ic_to_gdrive(
             bounding_box=bounding_box, sat_name=sat, band=band, date_from=date_from, date_to=date_to,
-            buffer_percent=buffer_percent, crs=crs, scale=scale, **filters
+            buffer_percent=buffer_percent, crs=crs, scale=scale, hourly=hourly, h_d_agg=h_d_agg, **filters
         )
 
         # Wait for all EE tasks to complete:
@@ -131,7 +137,7 @@ class DataAPI:
 
         # Wait for all Gdrive files to finish downloading:
         while len(gdrive.to_download(file_extensions=['tif'])):
-            time.sleep(5)
+            time.sleep(2)
         process_gd.kill()
 
         elapsed_time = time.time() - t1
@@ -154,13 +160,18 @@ if __name__ == "__main__":
         # Request once-daily images for temperature:
         api.get_gee_images(
             sat="ECMWF/ERA5_LAND/HOURLY",
-            band="temperature_2m",
+            band="total_precipitation",
             bounding_box=BOUNDING_BOX,
             date_from=f"{year}_01_01",
-            date_to=f"{year}_12_31",
+            date_to=f"{year+1}_01_01",
             delete_local=True,
             local_subdir=None,
             to_s3=True,
             s3_dir="11266500",
-            hour=12
+            crs=None,
+            buffer_percent=0.05,
+            scale=None,
+            hourly=False,
+            h_d_agg="sum"
+            # hour=12
         )
