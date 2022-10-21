@@ -26,6 +26,17 @@ class GEEClient:
         self._tasks, self._filenames = list(), list()
 
     @staticmethod
+    def get_projection_info(sat_name: str, band: str):
+        """Get projection information about a satellite band."""
+        collection = ee.ImageCollection(sat_name).select(band)
+        img = collection.first()
+        projection = img.projection()
+        scale = projection.nominalScale().getInfo()
+        info = projection.getInfo()
+        info["scale"] = scale
+        return info
+
+    @staticmethod
     def get_img_collection(sat_name: str, polygon: geometry.Polygon,
                            date_from: str, date_to: str,
                            band: str = None, **filters) -> ee.ImageCollection:
@@ -56,8 +67,9 @@ class GEEClient:
     def export_ic_to_gdrive(self, bounding_box: Tuple, sat_name: str,
                             band: str, date_from: str, date_to: str,
                             buffer_percent: float = 0.05,
-                            crs: str = "epsg:4326",
-                            scale: float = None, hourly: bool = False,
+                            crs: str = None, scale: float = None,
+                            hourly: bool = False,
+                            h_d_agg: str = None,
                             **filters) -> None:
         """Export all files in an Image Collection to GDrive.
 
@@ -68,9 +80,13 @@ class GEEClient:
             date_from: start date to get images from.
             date_to: end date to get images to.
             buffer_percent: percent of bounding box area to add as buffer.
-            crs: coordinate reference system.
-            scale: optional desired image resolution, otherwise default is used.
-            hourly: if True, append the hour to the datetime for hourly data.
+            crs: optional coordinate reference system, otherwise the satellite
+                band's default is used.
+            scale: optional desired image resolution, otherwise the satellite
+                band's default is used.
+            hourly: if True, append hour to file date stamp for hourly data.
+            h_d_agg: optional agg function to convert hourly data to daily;
+                either `mean` or `sum`.
             filters: key-value pairs of additional filters to apply to
                 properties of ImageCollection (e.g. hour from hourly datasets).
         """
@@ -81,94 +97,15 @@ class GEEClient:
 
         # Get the GEE image collection:
         ic = self.get_img_collection(sat_name=sat_name, polygon=polygon,
-                                     date_from=date_from, date_to=date_to, **filters)
-
-        # Number of images to download from the image collection:
-        num_img = ic.size().getInfo()  # NOQA
-        print(f"Satellite `{sat_name}`, band `{band}`: creating export tasks for {num_img:,.0f} images")
-
-        # Convert to a list of images:
-        img_list = ic.toList(num_img)  # NOQA
-
-        # Export the images one by one:
-        tasks, filenames = list(), list()
-        for i in tqdm(range(num_img)):
-
-            # Select the image:
-            img = ee.Image(img_list.get(i))
-
-            # Date of the image:
-            img_date = img.date().getInfo()  # NOQA
-            hdate = datetime.datetime.utcfromtimestamp(img_date["value"] / 1000).strftime(DATE_FORMAT)
-
-            # Select a band:
-            img_band = img.select(band)
-
-            # Get the original scale if not rescaling:
-            if scale is None:
-                scale = img_band.projection().nominalScale().getInfo()
-            assert isinstance(scale, float)
-
-            # Reproject:
-            reprojection = img_band.reproject(crs=crs, scale=scale)
-            if hourly:
-                hour = reprojection.getInfo()["properties"]["hour"]
-                hdate = hdate + "_" + f"{hour}".zfill(2)
-
-            # Export to G:Drive:
-            sat_name_c = remove_punctuation(sat_name)
-            crs_c = remove_punctuation(crs)
-            band_c = remove_punctuation(band)
-            hdate_c = remove_punctuation(hdate)
-            scale_c = remove_punctuation(f"{scale:.2f}")
-            filename = f"{crs_c}__{scale_c}__{sat_name_c}__{band_c}__{hdate_c}"
-            task = ee.batch.Export.image.toDrive(
-                reprojection.toFloat(),
-                description=f"Image {filename}",
-                folder=f"{sat_name_c}",
-                fileNamePrefix=filename,
-                region=gee_polygon,
-                fileFormat="GeoTIFF",
-                maxPixels=1e10
-            )
-            task.start()
-
-            tasks.append(task)
-            filenames.append(filename)
-
-        self._tasks += tasks
-        self._filenames += filenames
-
-    def export_hourly_to_daily(self, bounding_box: Tuple, sat_name: str,
-                               band: str, agg: str, date_from: str,
-                               date_to: str,  buffer_percent: float = 0.05,
-                               crs: str = "epsg:4326",
-                               scale: float = None) -> None:
-        """Alternate export that handles transforming hourly data to daily.
-
-        Args:
-            bounding_box: lat-lon coordinates defining the bounding box edges.
-            sat_name: satellite name in GEE catalog.
-            band: satellite band to get images from.
-            agg: hourly aggregation to daily - either 'sum' or 'mean'.
-            date_from: start date to get images from.
-            date_to: end date to get images to.
-            buffer_percent: percent of bounding box area to add as buffer.
-            crs: coordinate reference system.
-            scale: optional desired image resolution, otherwise default is used.
-        """
-        # TODO! Factor out this function and the other export function so that there is less duplication.
-        # Define the region of interest:
-        left, bottom, right, top = bounding_box  # NOQA
-        polygon = get_polygon(left, bottom, right, top, buffer_percent=buffer_percent)
-
-        # Get the GEE image collection:
-        ic = self.get_img_collection(sat_name=sat_name, polygon=polygon, date_from=date_from, date_to=date_to, band=band)
+                                     date_from=date_from, date_to=date_to,
+                                     band=band, **filters)
 
         # Convert hourly data to daily:
-        start_date = datetime.datetime.strptime(date_from, DATE_FORMAT).strftime("%Y-%m-%d")
-        end_date = datetime.datetime.strptime(date_to, DATE_FORMAT).strftime("%Y-%m-%d")
-        ic = self.hourly_to_daily(ic, start_date=start_date, end_date=end_date, agg=agg)
+        if isinstance(h_d_agg, str):
+            start_date = datetime.datetime.strptime(date_from, DATE_FORMAT).strftime("%Y-%m-%d")
+            end_date = datetime.datetime.strptime(date_to, DATE_FORMAT).strftime("%Y-%m-%d")
+            ic = self.hourly_to_daily(ic, start_date=start_date, end_date=end_date, agg=h_d_agg)
+            hourly = False  # Change flag to False as data is now daily.
 
         # Number of images to download from the image collection:
         num_img = ic.size().getInfo()  # NOQA
@@ -177,28 +114,38 @@ class GEEClient:
         # Convert to a list of images:
         img_list = ic.toList(num_img)  # NOQA
 
+        # Get the projection information:
+        projection_info = self.get_projection_info(sat_name, band)
+        if scale is None:
+            scale = projection_info["scale"]
+            reproject = False
+        else:
+            reproject = True
+        assert isinstance(scale, float)
+        if crs is None:
+            crs = projection_info["crs"]
+
         # Export the images one by one:
         tasks, filenames = list(), list()
-        img_date = datetime.datetime.strptime(date_from, DATE_FORMAT)
+        first_img_date = datetime.datetime.strptime(date_from, DATE_FORMAT)
         for i in tqdm(range(num_img)):
 
             # Select the image:
             img = ee.Image(img_list.get(i))
 
             # Date of the image:
-            hdate = img_date.strftime(DATE_FORMAT)
-            img_date += datetime.timedelta(days=1)
+            if isinstance(h_d_agg, str):
+                hdate = (first_img_date + datetime.timedelta(days=i)).strftime(DATE_FORMAT)
+            else:
+                img_date = img.date().getInfo()  # NOQA
+                hdate = datetime.datetime.utcfromtimestamp(img_date["value"] / 1000).strftime(DATE_FORMAT)
+            if hourly:
+                hour = img.getInfo()["properties"]["hour"]
+                hdate = hdate + "_" + f"{hour}".zfill(2)
 
-            # Get the original scale if not rescaling:
-            if scale is None:
-                scale = img.projection().nominalScale().getInfo()  # NOQA
-            assert isinstance(scale, float)
-
-            # Get the GEE polygon shape
-            gee_polygon = ee.Geometry.Polygon(list(polygon.boundary.coords))
-
-            # Reproject CRS and scale:
-            reprojection = img.reproject(crs=crs, scale=scale)  # NOQA
+            # Reproject:
+            if reproject:
+                img = img.reproject(crs=crs, scale=scale)  # NOQA
 
             # Export to G:Drive:
             sat_name_c = remove_punctuation(sat_name)
@@ -208,13 +155,15 @@ class GEEClient:
             scale_c = remove_punctuation(f"{scale:.2f}")
             filename = f"{crs_c}__{scale_c}__{sat_name_c}__{band_c}__{hdate_c}"
             task = ee.batch.Export.image.toDrive(
-                reprojection.toFloat(),
+                img.toFloat(),
                 description=f"Image {filename}",
                 folder=f"{sat_name_c}",
                 fileNamePrefix=filename,
                 region=gee_polygon,
                 fileFormat="GeoTIFF",
-                maxPixels=1e10
+                maxPixels=1e10,
+                crs=crs,
+                scale=scale
             )
             task.start()
 
