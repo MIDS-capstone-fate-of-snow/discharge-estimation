@@ -39,7 +39,51 @@ class TifFile:
 
     @property
     def pixel_mean(self):
+        """Mean of all pixel values."""
         return self.as_numpy.mean()
+
+    @property
+    def pixel_nanmean(self):
+        return np.nanmean(self.as_numpy)
+
+    @property
+    def pixel_sum(self):
+        """Mean of all pixel values."""
+        return self.as_numpy.sum()
+
+    @property
+    def pixel_nansum(self):
+        return np.nansum(self.as_numpy)
+
+    @property
+    def crs(self):
+        """Coordinate reference system."""
+        return self.tif_data.crs["init"]
+
+    @property
+    def bounds(self):
+        """Image lat-lon bounds."""
+        return self.tif_data.bounds
+
+    @property
+    def min_lon(self):
+        """Image minimum lon."""
+        return self.tif_data.bounds[0]
+
+    @property
+    def min_lat(self):
+        """Image minimum lat."""
+        return self.tif_data.bounds[1]
+
+    @property
+    def max_lon(self):
+        """Image maximum lon."""
+        return self.tif_data.bounds[2]
+
+    @property
+    def max_lat(self):
+        """Image maximum lat."""
+        return self.tif_data.bounds[3]
 
 
 class TifDir:
