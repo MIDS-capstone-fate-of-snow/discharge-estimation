@@ -1,14 +1,17 @@
+"""Client for working with files stored in AWS S3."""
 
 import datetime
 import os
+import tempfile
 import time
+from tqdm import tqdm
 
 import boto3
 from botocore.exceptions import ClientError
 import pandas as pd
 
 from logger import logging
-
+from tif_files import TifFile
 
 DATE_FORMAT = "%Y_%m_%d"
 
@@ -57,9 +60,8 @@ class S3Client:
             objects = bucket.objects.filter(Prefix=f"{directory_name}/")
         else:
             objects = bucket.objects.all()
-        names = [o.key for o in objects]
-        modified_dates = [o.last_modified for o in objects]
-        df = pd.DataFrame({"filepath": names, "last_modified_date": modified_dates})
+        names_dates = [(o.key, o.last_modified) for o in objects]
+        df = pd.DataFrame(names_dates, columns=["filepath", "last_modified_date"])
         df["filename"] = [fn.split("/")[-1] for fn in df["filepath"]]
         df["filename_prefix"] = [fn.split(".")[0] for fn in df["filename"]]
         df["filename_ext"] = [fn.split(".")[-1] for fn in df["filename"]]
@@ -119,19 +121,23 @@ class S3Client:
         df["date"] = pd.to_datetime(df["date"], format=DATE_FORMAT)
         return df
 
-    def download_to_local(self, *filename, skip_existing: bool = True):
+    def download_to_local(self, *filename, skip_existing: bool = True,
+                          custom_dir: str = None, shhh: bool = False):
         """Download files from the S3 bucket to the local directory.
 
         Args:
             filename: full S3 filename including subdirectories.
             skip_existing: if True, skip files which already exist locally.
+            custom_dir: optional custom location to store files, otherwise
+                `self.directory` is used.
+            shhh: if True, suppress print statuses.
         """
         files = list(set(filename))
 
         s3 = boto3.client("s3")
         for fname in files:
             subdirectories = fname.split("/")
-            base_dir = self.directory
+            base_dir = self.directory if custom_dir is None else custom_dir
             # Create sub-directories locally if they don't exist:
             for subdir in subdirectories[:-1]:
                 base_dir = os.path.join(base_dir, subdir)
@@ -143,7 +149,34 @@ class S3Client:
                 pass
             else:
                 s3.download_file(Bucket=self.bucket, Key=fname, Filename=target)
-                print(f"Downloaded S3 file to: {target}")
+                if not shhh:
+                    print(f"Downloaded S3 file to: {target}")
+
+    def agg_img_pixels(self, *filepath, agg: str = "sum",
+                       delete_after: bool = True):
+        """Compute the (not-nan) sum or mean of all pixels in each image.
+
+        Args:
+            filepath: full S3 filepath.
+            agg: aggregation operation; either `mean` or `sum`.
+            delete_after: if True, delete local file after computation.
+        """
+        temp_dir = tempfile.gettempdir()
+        results = list()
+        for fp in tqdm(filepath):
+            self.download_to_local(fp, custom_dir=temp_dir, shhh=True)
+            local_fp = os.path.join(temp_dir, fp)
+            tif = TifFile(local_fp)
+            if agg == "sum":
+                value = tif.pixel_nansum
+            elif agg == "mean":
+                value = tif.pixel_nanmean
+            else:
+                raise ValueError(f"Invalid agg operation: {agg}")
+            results.append((fp, value))
+            if delete_after:
+                os.remove(local_fp)
+        return pd.DataFrame(results, columns=["filepath", f"pixel_{agg}"])
 
     def __call__(self, s3_directory: str = None, file_ext: str = None,
                  delete_local: bool = True):
