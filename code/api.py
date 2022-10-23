@@ -4,6 +4,7 @@ import datetime
 import os.path
 import platform
 import time
+import warnings
 
 import multiprocess
 from multiprocess import Process  # NOQA
@@ -17,14 +18,14 @@ class DataAPI:
 
     def __init__(self, local_dir: str, gdrive_keys: str, service_account: str,
                  s3_bucket: str = None):
-        """
+        """API for managing training data for models.
 
         Args:
             local_dir: local directory to save images to.
             gdrive_keys: path to keys JSON file for GDrive service account.
             service_account: GEE service account name, e.g.
                 username@project.iam.gserviceaccount.com
-            s3_bucket:
+            s3_bucket: name of S3 bucket data will be stored in.
         """
         if not os.path.isdir(local_dir):
             raise NotADirectoryError(local_dir)
@@ -34,7 +35,6 @@ class DataAPI:
         self.gdrive_keys = gdrive_keys
         assert isinstance(service_account, str)
         self.service_account = service_account
-        assert isinstance(s3_bucket, str)
         self.s3_bucket = s3_bucket
 
     def local_subdir(self, *subdir):
@@ -127,6 +127,15 @@ class DataAPI:
         while gee.active:
             time.sleep(5)
 
+        # Check for GEE failures:
+        failures = gee.failures
+        if len(failures):
+            warnings.warn(f"{len(failures)} GEE task(s) failed - returning task objects for debugging.")
+            if to_s3:
+                process_s3.kill()  # NOQA
+            process_gd.kill()
+            return failures
+
         # Wait for all files to be uploaded to S3:
         if to_s3:
             ee_files = list(gee.tasks["filename"])
@@ -142,11 +151,13 @@ class DataAPI:
 
         elapsed_time = time.time() - t1
         print(f"Finished - elapsed_time = {elapsed_time:,.2f} seconds")
+        return gee._tasks  # NOQA
 
 
 if __name__ == "__main__":
 
-    for year in range(2010, 2021, 1):
+    # for year in range(2010, 2021, 1):
+    for year in range(2020, 2021, 1):
 
         DIR = os.getcwd()
         TEMP_DIR = os.path.join(os.path.dirname(DIR), "data", "temp")
@@ -157,10 +168,29 @@ if __name__ == "__main__":
 
         api = DataAPI(local_dir=TEMP_DIR, gdrive_keys=GDRIVE_KEYS, service_account=SERVICE_ACCT, s3_bucket=BUCKET)
 
-        # Request once-daily images for temperature:
-        api.get_gee_images(
-            sat="ECMWF/ERA5_LAND/HOURLY",
-            band="total_precipitation",
+        # # Request once-daily images for temperature:
+        # tasks = api.get_gee_images(
+        #     sat="ECMWF/ERA5_LAND/HOURLY",
+        #     band="total_precipitation",
+        #     bounding_box=BOUNDING_BOX,
+        #     date_from=f"{year}_01_01",
+        #     date_to=f"{year+1}_01_01",
+        #     delete_local=True,
+        #     local_subdir=None,
+        #     to_s3=True,
+        #     s3_dir="11266500",
+        #     crs=None,
+        #     buffer_percent=0.05,
+        #     scale=None,
+        #     hourly=False,
+        #     h_d_agg="sum"
+        #     # hour=12
+        # )
+
+        # Request raw for MODIS-ET:
+        tasks = api.get_gee_images(
+            sat="MODIS/006/MOD16A2",
+            band="ET",
             bounding_box=BOUNDING_BOX,
             date_from=f"{year}_01_01",
             date_to=f"{year+1}_01_01",
@@ -168,10 +198,8 @@ if __name__ == "__main__":
             local_subdir=None,
             to_s3=True,
             s3_dir="11266500",
-            crs=None,
+            crs="EPSG:4326",
             buffer_percent=0.05,
             scale=None,
             hourly=False,
-            h_d_agg="sum"
-            # hour=12
         )

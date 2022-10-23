@@ -4,11 +4,12 @@ import datetime
 import os
 import tempfile
 import time
-from tqdm import tqdm
+import warnings
 
 import boto3
 from botocore.exceptions import ClientError
 import pandas as pd
+from tqdm import tqdm
 
 from logger import logging
 from tif_files import TifFile
@@ -44,6 +45,14 @@ def upload_file_to_s3(fp: str, bucket: str, object_name: str = None,
 class S3Client:
 
     def __init__(self, directory: str, bucket: str, test: bool = True):
+        """Client for managing files in an AWS S3 bucket.
+
+        Args:
+            directory: local directory to download files to.
+            bucket: name of S3 bucket client connects to.
+            test: whether or not to run in test mode, which means files won't
+                actually be deleted.
+        """
         assert os.path.isdir(directory), f"Invalid directory path: {directory}"
         self.directory = directory
         self.bucket = bucket
@@ -60,8 +69,8 @@ class S3Client:
             objects = bucket.objects.filter(Prefix=f"{directory_name}/")
         else:
             objects = bucket.objects.all()
-        names_dates = [(o.key, o.last_modified) for o in objects]
-        df = pd.DataFrame(names_dates, columns=["filepath", "last_modified_date"])
+        name_date_owner_size = [(o.key, o.last_modified, o.owner, o.size) for o in objects]
+        df = pd.DataFrame(name_date_owner_size, columns=["filepath", "last_modified_date", "owner", "size"])
         df["filename"] = [fn.split("/")[-1] for fn in df["filepath"]]
         df["filename_prefix"] = [fn.split(".")[0] for fn in df["filename"]]
         df["filename_ext"] = [fn.split(".")[-1] for fn in df["filename"]]
@@ -105,6 +114,18 @@ class S3Client:
         msg = f"{self.test_msg_prefix}Deleted local file: {fp}"
         logging.info(msg)
         print(msg)
+
+    def delete_s3_file(self, *filepath: str):
+        """Delete files on S3.
+
+        Args:
+            filepath: full relative filepath in S3 bucket.
+        """
+        client = boto3.client("s3")
+        out = []
+        for fp in filepath:
+            out.append(client.delete_object(Bucket=self.bucket, Key=fp))
+        return out
 
     def list_gee_tif_files(self, directory_name: str = None):
         """List all GeoTiff files saved in S3 from GEE, with specific filename
@@ -177,6 +198,65 @@ class S3Client:
             if delete_after:
                 os.remove(local_fp)
         return pd.DataFrame(results, columns=["filepath", f"pixel_{agg}"])
+
+    def download_training_data(self, gage_name: str, date_from: str,
+                               date_to: str, skip_existing: bool = True):
+        """Download training data from S3 to local for model training. Performs
+        checks to make sure all required data for the periods given is present.
+
+        Args:
+            gage_name: streamgage name (directory name in S3 bucket).
+            date_from: inclusive start date to get training data for.
+            date_to: inclusive end data to get training data for.
+            skip_existing: if True, skip local files which already exist.
+        """
+
+        # Convert date strings to datetime objects, and define all dates in range:
+        dt_from = datetime.datetime.strptime(date_from, DATE_FORMAT)
+        dt_to = datetime.datetime.strptime(date_to, DATE_FORMAT)
+        assert dt_to >= dt_from
+
+        # List all tif files in the bucket directory for the gage:
+        tifs = self.list_gee_tif_files(directory_name=gage_name)
+
+        # Filter to target date period:
+        tifs = tifs[(tifs["date"] >= dt_from) & (tifs["date"] <= dt_to)]
+
+        # Make the directory structure for downloading into:
+        target_dir = self.directory
+        for subdir in ("training_data", "raw"):
+            target_dir = os.path.join(target_dir, subdir)
+            if not os.path.exists(target_dir):
+                os.mkdir(target_dir)
+
+        # Get the data for each band:
+        for band, freq in [("total_precipitation", 1), ("temperature_2m", 1), ("ET", 8)]:
+
+            df = tifs[tifs["band"] == band]
+
+            # Check all target dates are present:
+            first_date = df["date"].min()
+            if first_date > dt_from + datetime.timedelta(days=freq-1):
+                warnings.warn(f"{band} first date greater than {freq} days from requested start date.")
+            dates = set(df["date"])
+            expected_dates = {first_date + datetime.timedelta(d) for d in range(0, (dt_to - dt_from).days + 1, freq)}
+            missing = expected_dates - dates
+            if len(missing):
+                warnings.warn(f"Missing {band} data for dates:\n{sorted(missing)}")
+
+            # Dedupe multiple files for the same date:
+            date_counts = df["date"].value_counts()
+            dupes = date_counts[date_counts > 1]
+            if len(dupes):
+                warnings.warn(f"Duplicate {band} files found for below dates. (keeping most recently "
+                              f"updated file but this may not be correct):\n{sorted(dupes.index)}")
+                df = df.sort_values(by=["date", "last_modified_date"], ascending=[True, False])
+                df = df.drop_duplicates(subset=["date"], keep="first")
+
+            # Download to local:
+            print(f"Downloading {band} data to {target_dir}")
+            for fp in tqdm(df["filepath"]):
+                self.download_to_local(fp, custom_dir=target_dir, skip_existing=skip_existing, shhh=True)
 
     def __call__(self, s3_directory: str = None, file_ext: str = None,
                  delete_local: bool = True):

@@ -212,9 +212,25 @@ class GEEClient:
     @property
     def incomplete_tasks(self):
         task_df = self.tasks
-        task_df = task_df[task_df["state"] != "COMPLETED"]
+        task_df = task_df[~task_df["state"].isin(["FAILED", "COMPLETED"])]
         return task_df
 
     @property
     def active(self):
         return bool(len(self.incomplete_tasks))
+
+    @property
+    def failures(self):
+        """DataFrame of failed tasks."""
+        task_df = self.tasks
+        task_df = task_df[task_df["state"] == "FAILED"]
+        return task_df
+
+    @property
+    def failed_tasks(self):
+        """Failed task objects."""
+        failures_df = self.failures
+        failures = list()
+        for i in failures_df.index:
+            failures.append(self._tasks[i])
+        return failures
