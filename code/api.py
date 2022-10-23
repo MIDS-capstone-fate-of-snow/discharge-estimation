@@ -1,7 +1,8 @@
 """User API for discharge estimation."""
 
 import datetime
-import os.path
+import json
+import os
 import platform
 import time
 import warnings
@@ -156,20 +157,45 @@ class DataAPI:
 
 if __name__ == "__main__":
 
-    # for year in range(2010, 2021, 1):
-    for year in range(2020, 2021, 1):
+    DIR = os.getcwd()
+    DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
+    TEMP_DIR = os.path.join(DATA_DIR, "temp")
 
-        DIR = os.getcwd()
-        TEMP_DIR = os.path.join(os.path.dirname(DIR), "data", "temp")
+    GAGE_NAME = "11266500"  # This will be updated to all other gages to get full data.
+
+    bbox_fp = os.path.join(DATA_DIR, "watershed_bounding_boxes.json")
+    with open(bbox_fp, "r") as f:
+        BBOXES = json.load(f)
+
+    for year in range(2010, 2021, 1):
+
         GDRIVE_KEYS = os.path.join(os.path.expanduser("~"), "snow-capstone-4a3c9603fcf0.json")
         SERVICE_ACCT = "capstone-gee-account@snow-capstone.iam.gserviceaccount.com"
         BUCKET = "w210-snow-fate"
-        BOUNDING_BOX = (-119.67587142994948, 37.5937475200786, -119.25727819655671, 37.90260095290917)
+        BOUNDING_BOX = BBOXES[GAGE_NAME]
 
         api = DataAPI(local_dir=TEMP_DIR, gdrive_keys=GDRIVE_KEYS, service_account=SERVICE_ACCT, s3_bucket=BUCKET)
 
-        # # Request once-daily images for temperature:
-        # tasks = api.get_gee_images(
+        # Request mean images for temperature:
+        _ = api.get_gee_images(
+            sat="ECMWF/ERA5_LAND/HOURLY",
+            band="temperature_2m",
+            bounding_box=BOUNDING_BOX,
+            date_from=f"{year}_01_01",
+            date_to=f"{year+1}_01_01",
+            delete_local=True,
+            local_subdir=None,
+            to_s3=True,
+            s3_dir=GAGE_NAME,
+            crs=None,
+            buffer_percent=0.05,
+            scale=None,
+            hourly=False,
+            h_d_agg="mean"
+        )
+
+        # # Request sum images for precipitation:
+        # _ = api.get_gee_images(
         #     sat="ECMWF/ERA5_LAND/HOURLY",
         #     band="total_precipitation",
         #     bounding_box=BOUNDING_BOX,
@@ -178,28 +204,27 @@ if __name__ == "__main__":
         #     delete_local=True,
         #     local_subdir=None,
         #     to_s3=True,
-        #     s3_dir="11266500",
+        #     s3_dir=GAGE_NAME,
         #     crs=None,
         #     buffer_percent=0.05,
         #     scale=None,
         #     hourly=False,
         #     h_d_agg="sum"
-        #     # hour=12
         # )
 
-        # Request raw for MODIS-ET:
-        tasks = api.get_gee_images(
-            sat="MODIS/006/MOD16A2",
-            band="ET",
-            bounding_box=BOUNDING_BOX,
-            date_from=f"{year}_01_01",
-            date_to=f"{year+1}_01_01",
-            delete_local=True,
-            local_subdir=None,
-            to_s3=True,
-            s3_dir="11266500",
-            crs="EPSG:4326",
-            buffer_percent=0.05,
-            scale=None,
-            hourly=False,
-        )
+        # # Request raw for MODIS-ET:
+        # _ = api.get_gee_images(
+        #     sat="MODIS/006/MOD16A2",
+        #     band="ET",
+        #     bounding_box=BOUNDING_BOX,
+        #     date_from=f"{year}_01_01",
+        #     date_to=f"{year+1}_01_01",
+        #     delete_local=True,
+        #     local_subdir=None,
+        #     to_s3=True,
+        #     s3_dir=GAGE_NAME,
+        #     crs="EPSG:4326",
+        #     buffer_percent=0.05,
+        #     scale=None,
+        #     hourly=False,
+        # )
