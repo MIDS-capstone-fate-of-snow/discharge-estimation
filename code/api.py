@@ -161,7 +161,7 @@ if __name__ == "__main__":
     DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
     TEMP_DIR = os.path.join(DATA_DIR, "temp")
 
-    GAGE_NAME = "11266500"  # This will be updated to all other gages to get full data.
+    GAGE_NAME = "11402000"  # This will be updated to all other gages to get full data.
 
     bbox_fp = os.path.join(DATA_DIR, "watershed_bounding_boxes.json")
     with open(bbox_fp, "r") as f:
@@ -176,23 +176,23 @@ if __name__ == "__main__":
 
         api = DataAPI(local_dir=TEMP_DIR, gdrive_keys=GDRIVE_KEYS, service_account=SERVICE_ACCT, s3_bucket=BUCKET)
 
-        # Request mean images for temperature:
-        _ = api.get_gee_images(
-            sat="ECMWF/ERA5_LAND/HOURLY",
-            band="temperature_2m",
-            bounding_box=BOUNDING_BOX,
-            date_from=f"{year}_01_01",
-            date_to=f"{year+1}_01_01",
-            delete_local=True,
-            local_subdir=None,
-            to_s3=True,
-            s3_dir=GAGE_NAME,
-            crs=None,
-            buffer_percent=0.05,
-            scale=None,
-            hourly=False,
-            h_d_agg="mean"
-        )
+        # # Request mean images for temperature:
+        # _ = api.get_gee_images(
+        #     sat="ECMWF/ERA5_LAND/HOURLY",
+        #     band="temperature_2m",
+        #     bounding_box=BOUNDING_BOX,
+        #     date_from=f"{year}_01_01",
+        #     date_to=f"{year+1}_01_01",
+        #     delete_local=True,
+        #     local_subdir=None,
+        #     to_s3=True,
+        #     s3_dir=GAGE_NAME,
+        #     crs=None,
+        #     buffer_percent=0.05,
+        #     scale=None,
+        #     hourly=False,
+        #     h_d_agg="mean"
+        # )
 
         # # Request sum images for precipitation:
         # _ = api.get_gee_images(
@@ -212,19 +212,19 @@ if __name__ == "__main__":
         #     h_d_agg="sum"
         # )
 
-        # # Request raw for MODIS-ET:
-        # _ = api.get_gee_images(
-        #     sat="MODIS/006/MOD16A2",
-        #     band="ET",
-        #     bounding_box=BOUNDING_BOX,
-        #     date_from=f"{year}_01_01",
-        #     date_to=f"{year+1}_01_01",
-        #     delete_local=True,
-        #     local_subdir=None,
-        #     to_s3=True,
-        #     s3_dir=GAGE_NAME,
-        #     crs="EPSG:4326",
-        #     buffer_percent=0.05,
-        #     scale=None,
-        #     hourly=False,
-        # )
+        # Request raw for MODIS-ET:
+        _ = api.get_gee_images(
+            sat="MODIS/006/MOD16A2",
+            band="ET",
+            bounding_box=BOUNDING_BOX,
+            date_from=f"{year}_01_01",
+            date_to=f"{year+1}_01_01",
+            delete_local=True,
+            local_subdir=None,
+            to_s3=True,
+            s3_dir=GAGE_NAME,
+            crs="EPSG:4326",
+            buffer_percent=0.05,
+            scale=None,
+            hourly=False,
+        )
