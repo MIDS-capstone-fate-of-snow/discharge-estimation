@@ -173,13 +173,12 @@ class S3Client:
                 if not shhh:
                     print(f"Downloaded S3 file to: {target}")
 
-    def agg_img_pixels(self, *filepath, agg: str = "sum",
-                       delete_after: bool = True):
-        """Compute the (not-nan) sum or mean of all pixels in each image.
+    def agg_img_pixels(self, *filepath,
+                       delete_after: bool = True) -> pd.DataFrame:
+        """Compute (not-nan) sum, mean, min, max of all pixels in images.
 
         Args:
-            filepath: full S3 filepath.
-            agg: aggregation operation; either `mean` or `sum`.
+            filepath: full S3 filepath to image.
             delete_after: if True, delete local file after computation.
         """
         temp_dir = tempfile.gettempdir()
@@ -188,16 +187,11 @@ class S3Client:
             self.download_to_local(fp, custom_dir=temp_dir, shhh=True)
             local_fp = os.path.join(temp_dir, fp)
             tif = TifFile(local_fp)
-            if agg == "sum":
-                value = tif.pixel_nansum
-            elif agg == "mean":
-                value = tif.pixel_nanmean
-            else:
-                raise ValueError(f"Invalid agg operation: {agg}")
-            results.append((fp, value))
+            results.append((fp, tif.pixel_nansum, tif.pixel_nanmean, tif.pixel_nanmin, tif.pixel_nanmax))
             if delete_after:
                 os.remove(local_fp)
-        return pd.DataFrame(results, columns=["filepath", f"pixel_{agg}"])
+        columns = ["filepath"] + [f"pixel_{op}" for op in ("sum", "mean", "min", "max")]
+        return pd.DataFrame(results, columns=columns)
 
     def download_training_data(self, gage_name: str, date_from: str,
                                date_to: str, skip_existing: bool = True):

@@ -44,16 +44,38 @@ class TifFile:
 
     @property
     def pixel_nanmean(self):
+        """Mean of all non-nan pixel values."""
         return np.nanmean(self.as_numpy)
 
     @property
     def pixel_sum(self):
-        """Mean of all pixel values."""
+        """Sum of all pixel values."""
         return self.as_numpy.sum()
 
     @property
     def pixel_nansum(self):
+        """Sum of all non-nan pixel values."""
         return np.nansum(self.as_numpy)
+
+    @property
+    def pixel_min(self):
+        """Min of all pixel values."""
+        return self.as_numpy.min()
+
+    @property
+    def pixel_nanmin(self):
+        """Min of all non-nan pixel values."""
+        return np.nanmin(self.as_numpy)
+
+    @property
+    def pixel_max(self):
+        """Max of all pixel values."""
+        return self.as_numpy.max()
+
+    @property
+    def pixel_nanmax(self):
+        """Max of all non-nan pixel values."""
+        return np.nanmax(self.as_numpy)
 
     @property
     def crs(self):

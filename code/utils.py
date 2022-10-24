@@ -13,6 +13,7 @@ from shapely import affinity, geometry
 
 DATETIME_FORMAT = "%Y_%m_%d__%H_%M_%S"
 PUNCTUATION = {p: "_" for p in string.punctuation}
+DATE_FORMAT = "%Y_%m_%d"
 
 
 def list_streamgage_files(directory: str):
@@ -99,3 +100,25 @@ def get_usgs_site_info(gage: str):
     location = soup.find_all("div", {"id": "location"})[0].contents[1]
     area = soup.find_all("div", {"id": "drainage_area"})[0].contents[1]
     return {"full_title": full_title, "location": f"LOCATION{location}", "area": f"DRAINAGE AREA{area}"}
+
+
+def sat_img_filelist_df(filelist: list):
+    """Construct a DataFrame from a list of satellite image files with this
+    specific file format:
+
+        '/subdirs/{crs}__{scale}__{satellite}__{band}__{date}.tif'
+    """
+    df = pd.DataFrame({"filename": filelist})
+    df["filename_ext"] = df["filename"].map(lambda s: s.split(".")[-1])
+    df["filename_prefix"] = df["filename"].map(lambda s: s.split("/")[-1])
+    df["filename_prefix"] = df["filename_prefix"].map(lambda s: s.split(".")[0])
+    df["subdir"] = df["filename"].map(lambda s: "/".join(s.split("/")[:-1]))
+    filename_parts = ["crs", "scale", "satellite", "band"]
+    for i, part in enumerate(filename_parts):  # NOQA
+        df[part] = df["filename_prefix"].map(lambda s: s.split("__")[i])
+    df["scale"] = df["scale"].str.replace("_", ".").astype(float)
+    dates = df["filename_prefix"].map(lambda s: s.split("__")[-1])
+    # Remove version numbers and hours if present:
+    df["date_str"] = dates.map(lambda s: s[:10])
+    df["date"] = pd.to_datetime(df["date_str"], format=DATE_FORMAT)
+    return df

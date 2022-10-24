@@ -9,13 +9,73 @@ import warnings
 
 import multiprocess
 from multiprocess import Process  # NOQA
+import pandas as pd
 
 from aws_s3_client import S3Client
 from gdrive_client import GDriveClient
 from gee_client import GEEClient
+from utils import sat_img_filelist_df
 
 
-class DataAPI:
+class DischargeAPI:
+
+    def __init__(self, local_data_dir: str, s3_bucket: str, gdrive_keys: str,
+                 service_account: str):
+        """
+
+        Args:
+            local_data_dir: local data directory where files will be stored.
+            s3_bucket: name of S3 bucket data will be stored in.
+            gdrive_keys: path to keys JSON file for GDrive service account.
+            service_account: GEE service account name, e.g.
+                username@project.iam.gserviceaccount.com
+        """
+        if not os.path.isdir(local_data_dir):
+            raise NotADirectoryError(local_data_dir)
+        self.local_data_dir = local_data_dir
+        temp_dir = os.path.join(self.local_data_dir, "temp")
+        if not os.path.exists(temp_dir):
+            os.mkdir(temp_dir)
+        self.temp_dir = temp_dir
+        self.gdrive_keys = gdrive_keys
+        self.service_account = service_account
+        self.s3_bucket = s3_bucket
+        self.S3Client = S3Client(self.local_data_dir, self.s3_bucket)
+        self.GEEAPI = GEEAPI(local_dir=self.temp_dir, gdrive_keys=self.gdrive_keys,
+                             service_account=self.service_account, s3_bucket=self.s3_bucket)
+
+    def create_pixel_agg_csv(self, gage: str,
+                             sat_name: str = "MODIS_006_MOD16A2",
+                             band: str = "ET"):
+        """Create CSV of the aggregate pixel values for each image in a
+        satellite band for a target gage.
+
+        Args:
+            gage: target gage name.
+            sat_name: satellite name as in S3 image filenames.
+            band: satellite name as in S3 image filenames.
+        """
+        tifs = self.S3Client.list_gee_tif_files(gage)
+        tifs = tifs[(tifs["satellite"] == sat_name) & (tifs["band"] == band)]
+        agg_df = self.S3Client.agg_img_pixels(*tifs["filepath"])
+        fl_df = sat_img_filelist_df(tifs["filepath"])
+        df = pd.concat([fl_df.set_index("filename"), agg_df.set_index("filepath")], axis=1)
+        df.index.name = "filepath"
+        df = df.reset_index()
+        df["gage"] = gage
+        target_dir = self.local_data_dir
+        for subdir in (sat_name, band):
+            target_dir = os.path.join(target_dir, subdir)
+            if not os.path.exists(target_dir):
+                os.mkdir(target_dir)
+        filename = f"{gage}__{sat_name}__{band}.csv"
+        fp = os.path.join(target_dir, filename)
+        df.to_csv(fp, encoding="utf-8", index=False)
+        print(f"{len(df)} rows saved to CSV: {fp}")
+        return fp
+
+
+class GEEAPI:
 
     def __init__(self, local_dir: str, gdrive_keys: str, service_account: str,
                  s3_bucket: str = None):
@@ -140,7 +200,7 @@ class DataAPI:
         # Wait for all files to be uploaded to S3:
         if to_s3:
             ee_files = list(gee.tasks["filename"])
-            filenames = [f"{f}.tif" for f in ee_files]
+            filenames = [f"{fn}.tif" for fn in ee_files]
             while not s3.filenames_in_bucket(filenames, from_time=start_time, directory_name=s3_dir):
                 time.sleep(5)
             process_s3.kill()  # NOQA
@@ -174,12 +234,12 @@ if __name__ == "__main__":
         BUCKET = "w210-snow-fate"
         BOUNDING_BOX = BBOXES[GAGE_NAME]
 
-        api = DataAPI(local_dir=TEMP_DIR, gdrive_keys=GDRIVE_KEYS, service_account=SERVICE_ACCT, s3_bucket=BUCKET)
+        gee_api = GEEAPI(local_dir=TEMP_DIR, gdrive_keys=GDRIVE_KEYS, service_account=SERVICE_ACCT, s3_bucket=BUCKET)
 
-        # # Request mean images for temperature:
-        # _ = api.get_gee_images(
-        #     sat="ECMWF/ERA5_LAND/HOURLY",
-        #     band="temperature_2m",
+        # # Request raw for MODIS-ET:
+        # _ = gee_api.get_gee_images(
+        #     sat="MODIS/006/MOD16A2",
+        #     band="ET",
         #     bounding_box=BOUNDING_BOX,
         #     date_from=f"{year}_01_01",
         #     date_to=f"{year+1}_01_01",
@@ -187,35 +247,16 @@ if __name__ == "__main__":
         #     local_subdir=None,
         #     to_s3=True,
         #     s3_dir=GAGE_NAME,
-        #     crs=None,
+        #     crs="EPSG:4326",
         #     buffer_percent=0.05,
         #     scale=None,
         #     hourly=False,
-        #     h_d_agg="mean"
         # )
 
-        # # Request sum images for precipitation:
-        # _ = api.get_gee_images(
-        #     sat="ECMWF/ERA5_LAND/HOURLY",
-        #     band="total_precipitation",
-        #     bounding_box=BOUNDING_BOX,
-        #     date_from=f"{year}_01_01",
-        #     date_to=f"{year+1}_01_01",
-        #     delete_local=True,
-        #     local_subdir=None,
-        #     to_s3=True,
-        #     s3_dir=GAGE_NAME,
-        #     crs=None,
-        #     buffer_percent=0.05,
-        #     scale=None,
-        #     hourly=False,
-        #     h_d_agg="sum"
-        # )
-
-        # Request raw for MODIS-ET:
-        _ = api.get_gee_images(
-            sat="MODIS/006/MOD16A2",
-            band="ET",
+        # Request mean images for temperature:
+        _ = gee_api.get_gee_images(
+            sat="ECMWF/ERA5_LAND/HOURLY",
+            band="temperature_2m",
             bounding_box=BOUNDING_BOX,
             date_from=f"{year}_01_01",
             date_to=f"{year+1}_01_01",
@@ -223,8 +264,27 @@ if __name__ == "__main__":
             local_subdir=None,
             to_s3=True,
             s3_dir=GAGE_NAME,
-            crs="EPSG:4326",
+            crs=None,
             buffer_percent=0.05,
             scale=None,
             hourly=False,
+            h_d_agg="mean"
+        )
+
+        # Request sum images for precipitation:
+        _ = gee_api.get_gee_images(
+            sat="ECMWF/ERA5_LAND/HOURLY",
+            band="total_precipitation",
+            bounding_box=BOUNDING_BOX,
+            date_from=f"{year}_01_01",
+            date_to=f"{year+1}_01_01",
+            delete_local=True,
+            local_subdir=None,
+            to_s3=True,
+            s3_dir=GAGE_NAME,
+            crs=None,
+            buffer_percent=0.05,
+            scale=None,
+            hourly=False,
+            h_d_agg="sum"
         )
