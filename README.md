@@ -46,6 +46,8 @@ Main project repository for UC Berkeley Fall 2022 Capstone project.
 
 ### Satellite data
 
+* [ERA5-Land Hourly - ECMWF Climate Reanalysis](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_HOURLY#bands)
+* [MOD16A2.006: Terra Net Evapotranspiration 8-Day Global 500m](https://developers.google.com/earth-engine/datasets/catalog/MODIS_006_MOD16A2)
 * [Google doc of resources from TA Colorado Reed](https://docs.google.com/document/d/1UYxjAyhIkgTUiOCvRwsWo-JBV9y0jmHluC0zWqU5M-Q/edit)
 * [Professors' list of resources](https://docs.google.com/document/d/1f5q4R9SzMGcB734Oyqxy1ErVIpIZs1eCkHz0uaiqY4c/edit)
 * [Zoom video recording with TA Colorado Reed](https://zoom.us/rec/play/LeGfgLJw4m33wnZFp5kqTWBikPFPYOAUOWMY62D2cGHgEOc5kE_5jd4ADvH9E4V3AacB9WWEOY1-jn8e.wMqvTPDgHHiK_d3o)
