@@ -14,7 +14,9 @@ import pandas as pd
 from aws_s3_client import S3Client
 from gdrive_client import GDriveClient
 from gee_client import GEEClient
-from utils import sat_img_filelist_df
+from utils import get_y_data, sat_img_filelist_df
+
+DATE_FORMAT = "%Y_%m_%d"
 
 
 class DischargeAPI:
@@ -43,6 +45,9 @@ class DischargeAPI:
         self.S3Client = S3Client(self.local_data_dir, self.s3_bucket)
         self.GEEAPI = GEEAPI(local_dir=self.temp_dir, gdrive_keys=self.gdrive_keys,
                              service_account=self.service_account, s3_bucket=self.s3_bucket)
+
+        # Shortuts to util functions:
+        self.get_y_data = get_y_data
 
     def create_pixel_agg_csv(self, gage: str,
                              sat_name: str = "MODIS_006_MOD16A2",

@@ -7,6 +7,7 @@ import string
 
 from bs4 import BeautifulSoup
 import folium
+import numpy as np
 import pandas as pd
 import requests
 from shapely import affinity, geometry
@@ -121,4 +122,40 @@ def sat_img_filelist_df(filelist: list):
     # Remove version numbers and hours if present:
     df["date_str"] = dates.map(lambda s: s[:10])
     df["date"] = pd.to_datetime(df["date_str"], format=DATE_FORMAT)
+    return df
+
+
+def get_y_data(gage: str, from_date: str, to_date: str):
+    """Query USGS website to get target variable data for a specific
+    streamgage location.
+
+    Args:
+        gage: streamgage location name.
+        from_date: minimum date in format YYYY_MM_DD.
+        to_date: maximum date in format YYYY_MM_DD.
+    """
+    from_dt = datetime.datetime.strptime(from_date, DATE_FORMAT)
+    to_dt = datetime.datetime.strptime(to_date, DATE_FORMAT)
+
+    url = f"https://waterdata.usgs.gov/nwis/dv?cb_all_=on&cb_00010=on&cb_00060=on&format=rdb&site_no={gage}" \
+          f"&referred_module=sw&period=&begin_date={from_dt.strftime('%Y-%m-%d')}" \
+          f"&end_date={to_dt.strftime('%Y-%m-%d')}"
+
+    r = requests.get(url)
+    str_data = r.content.decode("utf-8")
+    lines = str_data.split("\n")
+    first_line = 0
+    while not lines[first_line].startswith("agency_cd"):
+        first_line += 1
+    lines = lines[first_line:]
+    columns = lines[0].split("\t")
+    dtypes = lines[1].split("\t")
+    data = lines[2:]
+    split_data = [(l.split("\t")) for l in data]
+    df = pd.DataFrame(split_data, columns=columns).dropna(subset=["site_no", "datetime"])
+    df["datetime"] = pd.to_datetime(df["datetime"], format="%Y-%m-%d")
+    for dtype, col in zip(dtypes, columns):
+        if "n" in dtype:
+            df[col] = df[col].replace("", np.nan).astype(float)
+            df["ft"] = df[col]
     return df
