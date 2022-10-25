@@ -1,5 +1,5 @@
 """Class for working with GDrive to download files to local."""
-
+import logging
 import os
 import shutil
 import time
@@ -184,6 +184,9 @@ class GDriveClient:
                  allow_duplicates: bool = True, delete: bool = True,
                  sleep: int = 1):
         while True:
-            self.download_by_file_ext(file_extensions=file_extensions,
-                                      allow_duplicates=allow_duplicates, delete=delete)
+            try:
+                self.download_by_file_ext(file_extensions=file_extensions,
+                                          allow_duplicates=allow_duplicates, delete=delete)
+            except Exception as e:
+                logging.debug(e)
             time.sleep(sleep)
