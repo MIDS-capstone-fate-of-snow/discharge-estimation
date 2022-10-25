@@ -2,6 +2,7 @@
 import os
 from PIL import Image  # NOQA
 
+import folium
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
@@ -106,6 +107,29 @@ class TifFile:
     def max_lat(self):
         """Image maximum lat."""
         return self.tif_data.bounds[3]
+
+    def plot_pixel_grid(self, my_map: folium.folium.Map = None,
+                        color: str = "blue", weight: int = 1,
+                        fill_opacity: float = 0.0, **kwargs):
+        """Plot a grid of the pixel locations on a folium map."""
+        if my_map is None:
+            lat = self.min_lat + ((self.max_lat - self.min_lat) / 2)
+            lon = self.min_lon + ((self.max_lon - self.min_lon) / 2)
+            my_map = folium.Map(location=[lat, lon], **kwargs)
+        width = self.max_lon - self.min_lon
+        height = self.max_lat - self.min_lat
+        cell_w = width / self.shape[1]
+        cell_h = height / self.shape[0]
+
+        for w in range(self.shape[0]):
+            for h in range(self.shape[1]):
+                min_lat = self.min_lat + (w * cell_w)
+                max_lat = self.min_lat + ((w+1) * cell_w)
+                min_lon = self.min_lon + (h * cell_h)
+                max_lon = self.min_lon + ((h+1) * cell_h)
+                folium.Rectangle([(min_lat, min_lon), (max_lat, max_lon)],
+                                 color=color, weight=weight, fill=True, fill_opacity=fill_opacity).add_to(my_map)
+        return my_map
 
 
 class TifDir:
