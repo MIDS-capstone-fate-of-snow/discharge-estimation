@@ -226,70 +226,73 @@ if __name__ == "__main__":
     DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
     TEMP_DIR = os.path.join(DATA_DIR, "temp")
 
-    GAGE_NAME = "11402000"  # This will be updated to all other gages to get full data.
+    GAGE_NAMES = ["11202710", "11185500", "11189500", "11208000", "11318500"]  # "11402000", "11266500"
 
-    bbox_fp = os.path.join(DATA_DIR, "watershed_bounding_boxes.json")
-    with open(bbox_fp, "r") as f:
-        BBOXES = json.load(f)
+    for gage_name in GAGE_NAMES:
 
-    for year in range(2010, 2021, 1):
+        bbox_fp = os.path.join(DATA_DIR, "watershed_bounding_boxes.json")
+        with open(bbox_fp, "r") as f:
+            BBOXES = json.load(f)
 
-        GDRIVE_KEYS = os.path.join(os.path.expanduser("~"), "snow-capstone-4a3c9603fcf0.json")
-        SERVICE_ACCT = "capstone-gee-account@snow-capstone.iam.gserviceaccount.com"
-        BUCKET = "w210-snow-fate"
-        BOUNDING_BOX = BBOXES[GAGE_NAME]
+        for year in range(2010, 2021, 1):
 
-        gee_api = GEEAPI(local_dir=TEMP_DIR, gdrive_keys=GDRIVE_KEYS, service_account=SERVICE_ACCT, s3_bucket=BUCKET)
+            GDRIVE_KEYS = os.path.join(os.path.expanduser("~"), "snow-capstone-4a3c9603fcf0.json")
+            SERVICE_ACCT = "capstone-gee-account@snow-capstone.iam.gserviceaccount.com"
+            BUCKET = "w210-snow-fate"
+            BOUNDING_BOX = BBOXES[gage_name]
 
-        # # Request raw for MODIS-ET:
-        # _ = gee_api.get_gee_images(
-        #     sat="MODIS/006/MOD16A2",
-        #     band="ET",
-        #     bounding_box=BOUNDING_BOX,
-        #     date_from=f"{year}_01_01",
-        #     date_to=f"{year+1}_01_01",
-        #     delete_local=True,
-        #     local_subdir=None,
-        #     to_s3=True,
-        #     s3_dir=GAGE_NAME,
-        #     crs="EPSG:4326",
-        #     buffer_percent=0.05,
-        #     scale=None,
-        #     hourly=False,
-        # )
+            gee_api = GEEAPI(local_dir=TEMP_DIR, gdrive_keys=GDRIVE_KEYS,
+                             service_account=SERVICE_ACCT, s3_bucket=BUCKET)
 
-        # Request mean images for temperature:
-        _ = gee_api.get_gee_images(
-            sat="ECMWF/ERA5_LAND/HOURLY",
-            band="temperature_2m",
-            bounding_box=BOUNDING_BOX,
-            date_from=f"{year}_01_01",
-            date_to=f"{year+1}_01_01",
-            delete_local=True,
-            local_subdir=None,
-            to_s3=True,
-            s3_dir=GAGE_NAME,
-            crs=None,
-            buffer_percent=0.05,
-            scale=None,
-            hourly=False,
-            h_d_agg="mean"
-        )
+            # Request raw for MODIS-ET:
+            _ = gee_api.get_gee_images(
+                sat="MODIS/006/MOD16A2",
+                band="ET",
+                bounding_box=BOUNDING_BOX,
+                date_from=f"{year}_01_01",
+                date_to=f"{year+1}_01_01",
+                delete_local=True,
+                local_subdir=None,
+                to_s3=True,
+                s3_dir=gage_name,
+                crs="EPSG:4326",
+                buffer_percent=0.05,
+                scale=None,
+                hourly=False,
+            )
 
-        # Request sum images for precipitation:
-        _ = gee_api.get_gee_images(
-            sat="ECMWF/ERA5_LAND/HOURLY",
-            band="total_precipitation",
-            bounding_box=BOUNDING_BOX,
-            date_from=f"{year}_01_01",
-            date_to=f"{year+1}_01_01",
-            delete_local=True,
-            local_subdir=None,
-            to_s3=True,
-            s3_dir=GAGE_NAME,
-            crs=None,
-            buffer_percent=0.05,
-            scale=None,
-            hourly=False,
-            h_d_agg="sum"
-        )
+            # Request mean images for temperature:
+            _ = gee_api.get_gee_images(
+                sat="ECMWF/ERA5_LAND/HOURLY",
+                band="temperature_2m",
+                bounding_box=BOUNDING_BOX,
+                date_from=f"{year}_01_01",
+                date_to=f"{year+1}_01_01",
+                delete_local=True,
+                local_subdir=None,
+                to_s3=True,
+                s3_dir=gage_name,
+                crs=None,
+                buffer_percent=0.05,
+                scale=None,
+                hourly=False,
+                h_d_agg="mean"
+            )
+
+            # Request sum images for precipitation:
+            _ = gee_api.get_gee_images(
+                sat="ECMWF/ERA5_LAND/HOURLY",
+                band="total_precipitation",
+                bounding_box=BOUNDING_BOX,
+                date_from=f"{year}_01_01",
+                date_to=f"{year+1}_01_01",
+                delete_local=True,
+                local_subdir=None,
+                to_s3=True,
+                s3_dir=gage_name,
+                crs=None,
+                buffer_percent=0.05,
+                scale=None,
+                hourly=False,
+                h_d_agg="sum"
+            )

@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 from logger import logging
 from tif_files import TifFile
+from utils import expected_image_dates, sat_img_filelist_df
 
 DATE_FORMAT = "%Y_%m_%d"
 
@@ -251,6 +252,50 @@ class S3Client:
             print(f"Downloading {band} data to {target_dir}")
             for fp in tqdm(df["filepath"]):
                 self.download_to_local(fp, custom_dir=target_dir, skip_existing=skip_existing, shhh=True)
+
+    def gage_data_report(self, gage_name: str, date_from: str,
+                         date_to: str) -> dict:
+        """Get a report of what data is in S3 for the gage in the date range.
+
+        Args:
+            gage_name: name of streamgage.
+            date_from: inclusive start date.
+            date_to: inclusive end date.
+        """
+        # Convert date strings to datetime objects, and define all dates in range:
+        dt_from = datetime.datetime.strptime(date_from, DATE_FORMAT)
+        dt_to = datetime.datetime.strptime(date_to, DATE_FORMAT)
+        assert dt_to >= dt_from
+
+        # Get dataframe of all images currently in bucket for streamgage:
+        df = self.list_bucket(gage_name)
+        extracted_columns = sat_img_filelist_df(df["filepath"]).rename(columns={"filename": "filepath"})
+        keep_cols = "filepath subdir crs scale satellite band date_str date".split()
+        df = pd.merge(df, extracted_columns[keep_cols], left_on="filepath", right_on="filepath")
+
+        # Create the 'report' as a dict of metadata about each band's data:
+        report = dict()
+        for band, freq in (("total_precipitation", 1), ("temperature_2m", 1), ("ET", 8)):
+            data = dict(freq=freq)
+            subset = df[df["band"] == band]
+
+            data["empty_files"] = len(subset[subset["size"] == 0])
+            subset = subset[subset["size"] > 0]
+
+            data["min_date"] = min(subset["date"])
+            data["max_date"] = max(subset["date"])
+            data["count"] = subset["date"].count()
+            data["nunique"] = subset["date"].nunique()
+            data["has_dupes"] = data["nunique"] < data["count"]
+            dates_expected = expected_image_dates(dt_from, dt_to, freq=data["freq"])
+            data["missing_dates"] = dates_expected - set(subset["date"])
+            value_counts = subset["date"].value_counts().sort_values(ascending=False)
+            data["dupes"] = value_counts[value_counts > 1]
+            data["dates_with_dupes_count"] = len(data["dupes"])
+            data["subset"] = subset
+            report[band] = data
+
+        return report
 
     def __call__(self, s3_directory: str = None, file_ext: str = None,
                  delete_local: bool = True):

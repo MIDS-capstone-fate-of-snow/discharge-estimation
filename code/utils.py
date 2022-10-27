@@ -159,3 +159,26 @@ def get_y_data(gage: str, from_date: str, to_date: str):
             df[col] = df[col].replace("", np.nan).astype(float)
             df["ft"] = df[col]
     return df
+
+
+def expected_image_dates(from_date: datetime.datetime,
+                         to_date: datetime.datetime, freq: int) -> set:
+    """Get all dates of a day frequency that fall between the from/to dates.
+    Assumes that satellite always starts images on Jan-1st (as MODIS does).
+
+    Args:
+        from_date: minimum inclusive start date.
+        to_date: maximum inclusive end date.
+        freq: frequency in days
+    """
+    dates = list()
+    for year in range(from_date.year, to_date.year + 1, 1):
+        year_dates = [datetime.datetime(year, 1, 1)]
+        while True:
+            next_date = year_dates[-1] + datetime.timedelta(days=freq)
+            if next_date.year == year:
+                year_dates.append(next_date)
+            else:
+                break
+        dates += year_dates
+    return {dt for dt in dates if (dt >= from_date) and (dt <= to_date)}
