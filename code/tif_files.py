@@ -135,6 +135,7 @@ class TifFile:
 class TifDir:
 
     def __init__(self, fp: str):
+        self.__ix = 0  # Index for generator.
         assert os.path.isdir(fp), f"Not a directory: {fp}"
         self.fp = fp
         self.tif_fps = [os.path.join(self.fp, f) for f in os.listdir(self.fp) if f.endswith(".tif")]
@@ -193,3 +194,15 @@ class TifDir:
 
     def __getitem__(self, item):
         return self.tifs[item]
+
+    def __next__(self):
+        v = self.tifs[self.__ix]
+        self.__ix += 1
+        return v
+
+    def __iter__(self):
+        for tif in self.tifs:
+            yield tif
+
+    def __len__(self):
+        return len(self.tif_fps)
