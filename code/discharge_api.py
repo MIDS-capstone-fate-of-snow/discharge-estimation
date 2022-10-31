@@ -226,19 +226,20 @@ if __name__ == "__main__":
     DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
     TEMP_DIR = os.path.join(DATA_DIR, "temp")
 
+    bbox_fp = os.path.join(DATA_DIR, "watershed_bounding_boxes.json")
+    with open(bbox_fp, "r") as f:
+        BBOXES = json.load(f)
+
+    GDRIVE_KEYS = os.path.join(os.path.expanduser("~"), "snow-capstone-4a3c9603fcf0.json")
+    SERVICE_ACCT = "capstone-gee-account@snow-capstone.iam.gserviceaccount.com"
+    BUCKET = "w210-snow-fate"
+
     GAGE_NAMES = ["11202710", "11185500", "11189500", "11208000", "11318500"]  # "11402000", "11266500"
 
     for gage_name in GAGE_NAMES:
 
-        bbox_fp = os.path.join(DATA_DIR, "watershed_bounding_boxes.json")
-        with open(bbox_fp, "r") as f:
-            BBOXES = json.load(f)
-
         for year in range(2010, 2021, 1):
 
-            GDRIVE_KEYS = os.path.join(os.path.expanduser("~"), "snow-capstone-4a3c9603fcf0.json")
-            SERVICE_ACCT = "capstone-gee-account@snow-capstone.iam.gserviceaccount.com"
-            BUCKET = "w210-snow-fate"
             BOUNDING_BOX = BBOXES[gage_name]
 
             gee_api = GEEAPI(local_dir=TEMP_DIR, gdrive_keys=GDRIVE_KEYS,
