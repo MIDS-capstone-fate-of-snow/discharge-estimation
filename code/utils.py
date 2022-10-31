@@ -16,6 +16,9 @@ DATETIME_FORMAT = "%Y_%m_%d__%H_%M_%S"
 PUNCTUATION = {p: "_" for p in string.punctuation}
 DATE_FORMAT = "%Y_%m_%d"
 
+DIR, FILENAME = os.path.split(__file__)
+DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
+
 
 def list_streamgage_files(directory: str):
     """List all files in directory with pattern `{streamgage}_xyx_{datetime}."""
@@ -159,6 +162,12 @@ def get_y_data(gage: str, from_date: str, to_date: str):
             df[col] = df[col].replace("", np.nan).astype(float)
             df["ft"] = df[col]
     return df
+
+
+def open_y_data():
+    """Load the saved CSV of outcome data."""
+    fp = os.path.join(DATA_DIR, "streamgage-full.csv")
+    return pd.read_csv(fp, encoding="utf-8")
 
 
 def expected_image_dates(from_date: datetime.datetime,
