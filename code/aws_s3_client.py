@@ -246,7 +246,7 @@ class S3Client:
                 df = df.drop_duplicates(subset=["date"], keep="first")
 
             # Download to local:
-            print(f"Downloading {band} data to {target_dir}")
+            print(f"Downloading {gage_name}, {band} data to {target_dir}")
             for fp in tqdm(df["filepath"]):
                 self.download_to_local(fp, custom_dir=target_dir, skip_existing=skip_existing, shhh=True)
 
