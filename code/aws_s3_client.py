@@ -224,27 +224,24 @@ class S3Client:
             if not os.path.exists(target_dir):
                 os.mkdir(target_dir)
 
+        # Run the report to check for missing data:
+        report = self.gage_data_report(gage_name, date_from, date_to)
+
         # Get the data for each band:
         for band, freq in [("total_precipitation", 1), ("temperature_2m", 1), ("ET", 8)]:
 
             df = tifs[tifs["band"] == band]
 
-            # Check all target dates are present:
-            first_date = df["date"].min()
-            if first_date > dt_from + datetime.timedelta(days=freq-1):
-                warnings.warn(f"{band} first date greater than {freq} days from requested start date.")
-            dates = set(df["date"])
-            expected_dates = {first_date + datetime.timedelta(d) for d in range(0, (dt_to - dt_from).days + 1, freq)}
-            missing = expected_dates - dates
+            # Warn missing dates:
+            missing = report[band]["missing_dates"]
             if len(missing):
                 warnings.warn(f"Missing {band} data for dates:\n{sorted(missing)}")
 
             # Dedupe multiple files for the same date:
-            date_counts = df["date"].value_counts()
-            dupes = date_counts[date_counts > 1]
-            if len(dupes):
+            if report[band]["has_dupes"]:
+                dupe_dates = report[band]["dupes"].index
                 warnings.warn(f"Duplicate {band} files found for below dates. (keeping most recently "
-                              f"updated file but this may not be correct):\n{sorted(dupes.index)}")
+                              f"updated file but this may not be correct):\n{sorted(dupe_dates)}")
                 df = df.sort_values(by=["date", "last_modified_date"], ascending=[True, False])
                 df = df.drop_duplicates(subset=["date"], keep="first")
 
