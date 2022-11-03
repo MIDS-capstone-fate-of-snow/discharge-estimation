@@ -278,17 +278,27 @@ class S3Client:
 
             data["empty_files"] = len(subset[subset["size"] == 0])
             subset = subset[subset["size"] > 0]
-
-            data["min_date"] = min(subset["date"])
-            data["max_date"] = max(subset["date"])
-            data["count"] = subset["date"].count()
-            data["nunique"] = subset["date"].nunique()
-            data["has_dupes"] = data["nunique"] < data["count"]
-            dates_expected = expected_image_dates(dt_from, dt_to, freq=data["freq"])
-            data["missing_dates"] = dates_expected - set(subset["date"])
-            value_counts = subset["date"].value_counts().sort_values(ascending=False)
-            data["dupes"] = value_counts[value_counts > 1]
-            data["dates_with_dupes_count"] = len(data["dupes"])
+            if len(subset):
+                data["min_date"] = min(subset["date"])
+                data["max_date"] = max(subset["date"])
+                data["count"] = subset["date"].count()
+                data["nunique"] = subset["date"].nunique()
+                data["has_dupes"] = data["nunique"] < data["count"]
+                dates_expected = expected_image_dates(dt_from, dt_to, freq=data["freq"])
+                data["missing_dates"] = dates_expected - set(subset["date"])
+                value_counts = subset["date"].value_counts().sort_values(ascending=False)
+                data["dupes"] = value_counts[value_counts > 1]
+                data["dates_with_dupes_count"] = len(data["dupes"])
+            else:
+                data["min_date"] = None
+                data["max_date"] = None
+                data["count"] = 0
+                data["nunique"] = 0
+                data["has_dupes"] = False
+                dates_expected = expected_image_dates(dt_from, dt_to, freq=data["freq"])
+                data["missing_dates"] = dates_expected
+                data["dupes"] = None
+                data["dates_with_dupes_count"] = 0
             data["subset"] = subset
             report[band] = data
 
