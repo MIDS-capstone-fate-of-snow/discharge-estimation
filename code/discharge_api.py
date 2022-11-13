@@ -234,11 +234,11 @@ if __name__ == "__main__":
     SERVICE_ACCT = "capstone-gee-account@snow-capstone.iam.gserviceaccount.com"
     BUCKET = "w210-snow-fate"
 
-    GAGE_NAMES = ["11318500"]  # "11402000", "11266500", "11202710", "11185500", "11189500", "11208000",
+    GAGE_NAMES = ["11318500", "11402000", "11266500", "11202710", "11185500", "11189500", "11208000"]
 
     for gage_name in GAGE_NAMES:
 
-        for year in range(2010, 2017, 1):
+        for year in range(2010, 2021, 1):
 
             BOUNDING_BOX = BBOXES[gage_name]
 
