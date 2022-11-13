@@ -23,20 +23,39 @@ class CNNSeqDataset:
                  n_d_precip: int = 7,
                  n_d_temp: int = 7,
                  n_d_et: int = 8,
-                 swe_d_rel: list = (7, 14, 21, 28),
+                 swe_d_rel: list = range(7, 85, 7),
                  n_d_y: int = 14,
                  min_date: str = "2010_01_01",
                  max_date: str = "2016_12_31",
                  val_start: str = "2015_01_01",
                  test_start: str = "2016_01_01"):
-        """Construct training dataset of images for training models."""
+        """Construct image training dataset for training CNN sequence models.
+
+        Args:
+            precip_dirs: directory(/ies) where precipitation images are saved.
+            temp_dirs: directory(/ies) where temperature images are saved.
+            et_dirs: directory(/ies) where ET images are saved.
+            swe_dirs: directory(/ies) where SWE images are saved.
+            y_fp: full filepath to CSV of streamgage measurement outcome data.
+            y_col: column in `y_fp` to use as the outcome variable.
+            n_d_precip: number of days to look back for precipitation images.
+            n_d_temp: number of days to look back for temperature images.
+            n_d_et: number of days to look back for ET images (since they are
+                only every 8 days, must be at least 8).
+            swe_d_rel: specific days back in the past to select SWE images from.
+            n_d_y: number of days forward to predict y measurements for.
+            min_date: global minimum training dataset date.
+            max_date: global maximum training dataset date.
+            val_start: date cutoff to start the validation set at.
+            test_start: date cutoff to start the test set at.
+        """
 
         # Store variables:
         self.n_d_precip = n_d_precip
         self.n_d_temp = n_d_temp
         assert n_d_et >= 8, f"MODIS data is only every 8 days, so must use 8 days minimum"
         self.n_d_et = n_d_et
-        self.swe_d_rel = swe_d_rel
+        self.swe_d_rel = list(swe_d_rel)
         self.n_d_y = n_d_y
 
         self.min_date = datetime.datetime.strptime(min_date, DATE_FORMAT)
@@ -109,7 +128,7 @@ class CNNSeqDataset:
 
     @staticmethod
     def extract_filename_data(fn: str):
-        """Extract gage, band, and date components from a filename using regex."""
+        """Extract gage, band, and date from a filename using regex."""
         streamgage = re.findall("\d{8}", fn)  # NOQA
         assert len(streamgage) == 1, f"No 8-digit streamgage found in filename: {fn}"
         datestr = re.findall("\d{4}_\d{2}_\d{2}", fn)  # NOQA
