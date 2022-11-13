@@ -61,6 +61,7 @@ class S3Client:
         self.test_file_prefix = "TEST__" if self.test else ""
         self.test_msg_prefix = "(TEST) " if self.test else ""
         self.test_deleted = list()
+        self._swe_files = None
 
     def list_bucket(self, directory_name: str = None):
         """List files in the S3 bucket."""
@@ -143,8 +144,30 @@ class S3Client:
         df["date"] = pd.to_datetime(df["date"], format=DATE_FORMAT)
         return df
 
+    def list_swe_files(self, directory_name: str = "swe_region",
+                       refresh: bool = False):
+        """List all SWE numpy files in S3 with specific filename format.
+
+        Args:
+            directory_name: subdirectory in S3 where SWE files are stored.
+            refresh: if True, query S3 for files again, else use existing file
+                list if query has already been called on this instance.
+        """
+        if refresh or (self._swe_files is None):
+            df = self.list_bucket(directory_name)
+            df = df[df["filename_ext"] == "npy"]
+            filename_parts = ["band", "gage", "date"]
+            for i, part in enumerate(filename_parts):  # NOQA
+                df[part] = df["filename_prefix"].map(lambda s: s.split("__")[i])
+            df["date"] = pd.to_datetime(df["date"], format=DATE_FORMAT)
+            self._swe_files = df
+        else:
+            df = self._swe_files
+        return df
+
     def download_to_local(self, *filename, skip_existing: bool = True,
-                          custom_dir: str = None, shhh: bool = False):
+                          custom_dir: str = None, shhh: bool = False,
+                          subdirs: str = "replicate"):
         """Download files from the S3 bucket to the local directory.
 
         Args:
@@ -153,24 +176,43 @@ class S3Client:
             custom_dir: optional custom location to store files, otherwise
                 `self.directory` is used.
             shhh: if True, suppress print statuses.
+            subdirs: what to do with S3 subdirs. Valid options are:
+                `replicate`: replicate the full subdir structure locally.
+                `to_filename`: update filename to include subdirectories.
+                `skip`: ignore subdirectories and just use filename.
         """
         files = list(set(filename))
 
         s3 = boto3.client("s3")
         for fname in files:
             subdirectories = fname.split("/")
-            base_dir = self.directory if custom_dir is None else custom_dir
-            # Create sub-directories locally if they don't exist:
-            for subdir in subdirectories[:-1]:
-                base_dir = os.path.join(base_dir, subdir)
-                if not os.path.exists(base_dir):
-                    os.mkdir(base_dir)
             local_fname = fname.split("/")[-1]
+            base_dir = self.directory if custom_dir is None else custom_dir
+
+            if subdirs == "replicate":
+                # Create sub-directories locally if they don't exist:
+                for subdir in subdirectories[:-1]:
+                    base_dir = os.path.join(base_dir, subdir)
+                    if not os.path.exists(base_dir):
+                        os.mkdir(base_dir)
+            elif subdirs == "to_filename":
+                # Create custom filename from subdirectories:
+                for subdir in subdirectories[:-1][::-1]:
+                    local_fname = f"{subdir}__{local_fname}"
+            elif subdirs == "skip":
+                pass
+            else:
+                raise ValueError(f"Invalid `subdirs` arg: {subdirs}")
+
             target = os.path.join(base_dir, local_fname)
             if skip_existing and os.path.exists(target):
                 pass
             else:
-                s3.download_file(Bucket=self.bucket, Key=fname, Filename=target)
+                try:
+                    s3.download_file(Bucket=self.bucket, Key=fname, Filename=target)
+                except ClientError as e:
+                    warnings.warn(f"ClientError downloading this file from S3 bucket: {fname}")
+                    raise e
                 if not shhh:
                     print(f"Downloaded S3 file to: {target}")
 
@@ -195,7 +237,8 @@ class S3Client:
         return pd.DataFrame(results, columns=columns)
 
     def download_training_data(self, gage_name: str, date_from: str,
-                               date_to: str, skip_existing: bool = True):
+                               date_to: str, skip_existing: bool = True,
+                               target_dir: str = None):
         """Download training data from S3 to local for model training. Performs
         checks to make sure all required data for the periods given is present.
 
@@ -204,6 +247,7 @@ class S3Client:
             date_from: inclusive start date to get training data for.
             date_to: inclusive end data to get training data for.
             skip_existing: if True, skip local files which already exist.
+            target_dir: optional custom directory to download to.
         """
 
         # Convert date strings to datetime objects, and define all dates in range:
@@ -218,16 +262,16 @@ class S3Client:
         tifs = tifs[(tifs["date"] >= dt_from) & (tifs["date"] <= dt_to)]
 
         # Make the directory structure for downloading into:
-        target_dir = self.directory
-        for subdir in ("training_data", "raw"):
-            target_dir = os.path.join(target_dir, subdir)
+        if target_dir is None:
+            target_dir = os.path.join(self.directory, "training_data")
             if not os.path.exists(target_dir):
                 os.mkdir(target_dir)
+        assert os.path.isdir(target_dir), f"Not a directory: {target_dir}"
 
         # Run the report to check for missing data:
         report = self.gage_data_report(gage_name, date_from, date_to)
 
-        # Get the data for each band:
+        # Get the data for precipitation, temperature and ET:
         for band, freq in [("total_precipitation", 1), ("temperature_2m", 1), ("ET", 8)]:
 
             df = tifs[tifs["band"] == band]
@@ -235,20 +279,37 @@ class S3Client:
             # Warn missing dates:
             missing = report[band]["missing_dates"]
             if len(missing):
-                warnings.warn(f"Missing {band} data for dates:\n{sorted(missing)}")
+                warnings.warn(f"Gage {gage_name} missing {band} data for dates:\n{sorted(missing)}")
 
             # Dedupe multiple files for the same date:
             if report[band]["has_dupes"]:
                 dupe_dates = report[band]["dupes"].index
-                warnings.warn(f"Duplicate {band} files found for below dates. (keeping most recently "
-                              f"updated file but this may not be correct):\n{sorted(dupe_dates)}")
+                warnings.warn(f"Gage {gage_name}: duplicate {band} files found for below dates. (keeping most "
+                              f"recently updated file but this may not be correct):\n{sorted(dupe_dates)}")
                 df = df.sort_values(by=["date", "last_modified_date"], ascending=[True, False])
                 df = df.drop_duplicates(subset=["date"], keep="first")
 
             # Download to local:
             print(f"Downloading {gage_name}, {band} data to {target_dir}")
             for fp in tqdm(df["filepath"]):
-                self.download_to_local(fp, custom_dir=target_dir, skip_existing=skip_existing, shhh=True)
+                self.download_to_local(fp, custom_dir=target_dir, skip_existing=skip_existing,
+                                       shhh=True, subdirs="to_filename")
+
+        # Get the data for SWE:
+        swe = self.list_swe_files(directory_name="swe_region", refresh=False)
+        swe = swe[(swe["gage"] == gage_name) & (swe["date"] >= dt_from) & (swe["date"] <= dt_to)]
+        # Check for missing data:
+        expected = expected_image_dates(dt_from, dt_to, freq=1)
+        actual = set(swe["date"])
+        missing = expected - actual
+        if len(missing):
+            warnings.warn(f"Gage {gage_name} missing SWE data for dates:\n{sorted(missing)}")
+
+        # Download to local:
+        print(f"Downloading {gage_name}, SWE data to {target_dir}")
+        for fp in tqdm(swe["filepath"]):
+            self.download_to_local(fp, custom_dir=target_dir, skip_existing=skip_existing,
+                                   shhh=True, subdirs="skip")
 
     def gage_data_report(self, gage_name: str, date_from: str,
                          date_to: str) -> dict:
