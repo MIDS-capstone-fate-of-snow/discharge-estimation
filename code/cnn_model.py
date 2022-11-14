@@ -1,13 +1,19 @@
 """Code for training a CNN-based sequence model using raw satellite images."""
 
 import datetime
+from itertools import product
 import os
+import random
 import re
+import yaml
 
 import pandas as pd
 
-from utils import expected_image_dates
+from tif_files import TifFile
+from utils import convert_datetime, expected_image_dates, open_npy_file, pixel_mean_std
 
+DIR, FILENAME = os.path.split(__file__)
+DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
 DATE_FORMAT = "%Y_%m_%d"
 
 
@@ -28,7 +34,9 @@ class CNNSeqDataset:
                  min_date: str = "2010_01_01",
                  max_date: str = "2016_12_31",
                  val_start: str = "2015_01_01",
-                 test_start: str = "2016_01_01"):
+                 test_start: str = "2016_01_01",
+                 random_seed: int = 42,
+                 shuffle_train: bool = True):
         """Construct image training dataset for training CNN sequence models.
 
         Args:
@@ -62,6 +70,9 @@ class CNNSeqDataset:
         self.max_date = datetime.datetime.strptime(max_date, DATE_FORMAT)
         self.val_start = datetime.datetime.strptime(val_start, DATE_FORMAT)
         self.test_start = datetime.datetime.strptime(test_start, DATE_FORMAT)
+
+        self.random_seed = random_seed
+        self.shuffle_train = shuffle_train
 
         # Expected dates for MODIS:
         modis_dates = pd.Series(sorted(expected_image_dates(self.min_date, self.max_date, 8)))
@@ -126,6 +137,61 @@ class CNNSeqDataset:
         self.date_bounds = self.get_xy_date_bounds()
         self.y_dates = pd.date_range(self.date_bounds["y_min_date"], self.date_bounds["y_max_date"])
 
+        # Calculate the gage-date pairs for training/validation/test:
+        self.train_pairs = self.get_training_pairs(min(self.y_dates), self.val_start - datetime.timedelta(days=1))
+        if self.shuffle_train:
+            random.seed(random_seed)
+            random.shuffle(self.train_pairs)
+        self.val_pairs = self.get_training_pairs(self.val_start, self.test_start - datetime.timedelta(days=1))
+        self.test_pairs = self.get_training_pairs(self.test_start, max(self.y_dates))
+
+        # Compute image normalization values for training period (if not already saved):
+        self._norm_fp = os.path.join(DATA_DIR, "img_norm_values.yaml")
+        if not os.path.exists(self._norm_fp):
+            with open(self._norm_fp, "w") as f:
+                yaml.safe_dump(dict(), f)
+        self.img_norm = dict()
+        for band in self.bands:
+            self.img_norm[band] = self.get_img_norm(band, self.min_date,
+                                                    (self.val_start - datetime.timedelta(days=1)),
+                                                    recompute=False)
+
+    @property
+    def saved_img_norm(self):
+        with open(self._norm_fp, "r") as f:
+            return yaml.safe_load(f)
+
+    def get_img_norm(self, band: str, date_from: datetime.datetime,
+                     date_to: datetime.datetime,
+                     recompute: bool = False):
+        date_from = convert_datetime(date_from, DATE_FORMAT)
+        date_to = convert_datetime(date_to, DATE_FORMAT)
+        df = self.metadata_df[(self.metadata_df["date"] >= date_from) & (self.metadata_df["date"] <= date_to) &
+                              (self.metadata_df["band"] == band.strip().lower())]
+        # Get the actual min/max dates possible with current data:
+        date_from, date_to = min(df["date"]), max(df["date"])
+        key = f"{date_from.strftime(DATE_FORMAT)}_to_{date_to.strftime(DATE_FORMAT)}"
+
+        if not recompute:  # Try to fetch precomputed values:
+            try:
+                return self.saved_img_norm[band][key]
+            except KeyError:
+                pass
+
+        # Calculate values:
+        mu_std = pixel_mean_std(*df["full_filepath"].values)
+
+        # Save values:
+        saved = self.saved_img_norm
+        if band not in saved.keys():
+            saved[band] = dict()
+        saved[band][key] = mu_std
+        with open(self._norm_fp, "w") as f:
+            yaml.safe_dump(saved, f)
+        print(f"Save image pixel mean/std for band `{band}`, date key `{key}`")
+
+        return mu_std
+
     @staticmethod
     def extract_filename_data(fn: str):
         """Extract gage, band, and date from a filename using regex."""
@@ -161,8 +227,7 @@ class CNNSeqDataset:
 
     def get_required_dates(self, y_date: datetime.datetime):
         """Get required feature dates for a target y-date."""
-        if isinstance(y_date, str):
-            y_date = datetime.datetime.strptime(y_date, DATE_FORMAT)
+        y_date = convert_datetime(y_date, DATE_FORMAT)
 
         req_dates = dict()
 
@@ -208,11 +273,68 @@ class CNNSeqDataset:
 
         return filepaths
 
+    def filepaths_to_data(self, fps: dict):
+        """Convert output of `get_required_filepaths` to actual data values.
+
+        Args:
+            fps: dict output from `get_required_filepaths` method.
+        """
+        data = dict()
+        data["y"] = fps["y"].values
+        for band in ("temp", "precip", "et", "swe"):
+            data[band] = list()
+            for fp in fps[band]:
+                if self.file_formats[band] == "tif":
+                    tif = TifFile(fp)
+                    arr = tif.as_numpy_zero_nan
+                elif self.file_formats[band] == "npy":
+                    arr = open_npy_file(fp)
+                else:
+                    raise ValueError(f"Invalid band: {band}")
+                norm_arr = (arr - self.img_norm[band]["pixel_mean"]) / self.img_norm[band]["pixel_std"]
+                data[band].append(norm_arr)
+        return data
+
+    def get_training_pairs(self, min_date: datetime.datetime,
+                           max_date: datetime.datetime):
+        """Get training pairs of (streamgage, date) within the date bounds.
+
+        Args:
+            min_date: inclusive minimum date.
+            max_date: inclusive maximum date.
+        """
+        min_date = convert_datetime(min_date, DATE_FORMAT)
+        max_date = convert_datetime(max_date, DATE_FORMAT)
+        y_dates = self.y_dates[(self.y_dates >= min_date) & (self.y_dates <= max_date)]
+        return list(product(self.gages, y_dates))
+
     def date_generator(self):
         for y_date in self.y_dates:
             yield self.get_required_dates(y_date)
 
-    def dataset_generator(self):
-        for gage in self.gages:
-            for y_date in self.y_dates:
-                yield self.get_required_filepaths(y_date, gage)
+    def train_filepath_generator(self):
+        for gage, y_date in self.train_pairs:
+            yield self.get_required_filepaths(y_date, gage)
+
+    def val_filepath_generator(self):
+        for gage, y_date in self.val_pairs:
+            yield self.get_required_filepaths(y_date, gage)
+
+    def test_filepath_generator(self):
+        for gage, y_date in self.test_pairs:
+            yield self.get_required_filepaths(y_date, gage)
+
+    def train_data_generator(self):
+        for gage, y_date in self.train_pairs:
+            fps = self.get_required_filepaths(y_date, gage)
+            yield self.filepaths_to_data(fps)
+
+    def val_data_generator(self):
+        for gage, y_date in self.val_pairs:
+            fps = self.get_required_filepaths(y_date, gage)
+            yield self.filepaths_to_data(fps)
+
+    def test_data_generator(self):
+        for gage, y_date in self.test_pairs:
+            fps = self.get_required_filepaths(y_date, gage)
+            yield self.filepaths_to_data(fps)

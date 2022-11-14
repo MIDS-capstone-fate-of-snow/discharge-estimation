@@ -12,6 +12,8 @@ import pandas as pd
 import requests
 from shapely import affinity, geometry
 
+from tif_files import TifFile
+
 DATETIME_FORMAT = "%Y_%m_%d__%H_%M_%S"
 PUNCTUATION = {p: "_" for p in string.punctuation}
 DATE_FORMAT = "%Y_%m_%d"
@@ -154,7 +156,7 @@ def get_y_data(gage: str, from_date: str, to_date: str):
     columns = lines[0].split("\t")
     dtypes = lines[1].split("\t")
     data = lines[2:]
-    split_data = [(l.split("\t")) for l in data]
+    split_data = [(line.split("\t")) for line in data]
     df = pd.DataFrame(split_data, columns=columns).dropna(subset=["site_no", "datetime"])
     df["datetime"] = pd.to_datetime(df["datetime"], format="%Y-%m-%d")
     for dtype, col in zip(dtypes, columns):
@@ -191,3 +193,48 @@ def expected_image_dates(from_date: datetime.datetime,
                 break
         dates += year_dates
     return {dt for dt in dates if (dt >= from_date) and (dt <= to_date)}
+
+
+def pixel_mean_std(*img_fp):
+    """Calculate mean and STD of all image pixels across multiple images.
+    Automatically fills in NaN values with zero."""
+    # Source: https://kozodoi.me/python/deep%20learning/pytorch/tutorial/2021/03/08/image-mean-std.html
+    total_img_sum = 0
+    total_img_sum_sq = 0
+    total_num_pixels = 0
+
+    for fp in img_fp:
+        if fp.endswith(".tif"):  # .tif file
+            tif = TifFile(fp)
+            np_arr = tif.as_numpy_zero_nan
+        elif fp.endswith(".npy"):  # .npy file
+            np_arr = open_npy_file(fp)
+        else:
+            raise TypeError(f"Invalid filetype: {fp}")
+        img_sum = np_arr.sum()
+        total_img_sum += img_sum
+        img_sum_sq = (np_arr ** 2).sum()
+        total_img_sum_sq += img_sum_sq
+        total_num_pixels += (np_arr.shape[0] * np_arr.shape[1])
+
+    pixel_mean = total_img_sum / total_num_pixels
+    pixel_var = (total_img_sum_sq / total_num_pixels) - (pixel_mean ** 2)
+    pixel_std = np.sqrt(pixel_var)
+
+    return {"pixel_mean": float(pixel_mean), "pixel_std": float(pixel_std)}
+
+
+def convert_datetime(date_obj: object, fmt: str = DATE_FORMAT):
+    """Convert possible string representation to datetime.datetime."""
+    if isinstance(date_obj, datetime.datetime):
+        return date_obj
+    elif isinstance(date_obj, str):
+        return datetime.datetime.strptime(date_obj, fmt)
+
+
+def open_npy_file(fp: str):
+    """Open a numpy array saved as .npy file. Automatically fills in NaN values
+    with zero."""
+    arr = np.load(fp)
+    arr[np.isnan(arr)] = 0
+    return arr

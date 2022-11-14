@@ -15,6 +15,8 @@ class TifFile:
         self.fp = fp
         self.tif_data = rasterio.open(fp)
         self.as_numpy = np.array(Image.open(self.fp))
+        # Version of the array with all NaNs filled with zero:
+        self.as_numpy_zero_nan = np.where(np.isnan(self.as_numpy), 0, self.as_numpy)
 
     def plot(self, ax=None):
         if ax is None:
