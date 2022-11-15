@@ -173,6 +173,45 @@ class GEEClient:
         self._tasks += tasks
         self._filenames += filenames
 
+    def export_dem_to_gdrive(self, bounding_box: Tuple, name: str,
+                             buffer_percent: float = 0.05):
+        """Get digital elevation model for a bounding box region.
+
+        Args:
+            bounding_box: lat-lon coordinates defining the bounding box edges.
+            name: location identifier e.g. streamgage name.
+            buffer_percent: float = 0.05.
+
+        Returns:
+            ee.batch.Task, str
+        """
+        # Import the USGS ground elevation image.
+        elv = ee.Image("USGS/SRTMGL1_003")
+
+        # Define the region of interest:
+        left, bottom, right, top = bounding_box  # NOQA
+        polygon = get_polygon(left, bottom, right, top, buffer_percent=buffer_percent)
+        gee_polygon = ee.Geometry.Polygon(list(polygon.boundary.coords))
+
+        # Set the file attributes.
+        description = f"Elevation data export for streamgage {name}"
+        now = datetime.datetime.now().strftime(DATETIME_FORMAT)
+        filename = f"{name}_dem_{now}"
+
+        # Export the geotiff to GDrive for the elevation image in the highlighted polygon:
+        task = ee.batch.Export.image.toDrive(
+            image=elv,
+            description=description,
+            scale=30,
+            region=gee_polygon,
+            fileNamePrefix=filename,
+            crs="EPSG:4326",
+            fileFormat="GeoTIFF"
+        )
+        task.start()
+        self._tasks += [task]
+        self._filenames += [filename]
+
     @staticmethod
     def hourly_to_daily(collection: ee.imagecollection.ImageCollection,
                         start_date: str, end_date: str, agg: str = "mean"):
