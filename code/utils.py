@@ -169,7 +169,10 @@ def get_y_data(gage: str, from_date: str, to_date: str):
 def open_y_data():
     """Load the saved CSV of outcome data."""
     fp = os.path.join(DATA_DIR, "streamgage-full.csv")
-    return pd.read_csv(fp, encoding="utf-8")
+    df = pd.read_csv(fp, encoding="utf-8")
+    df["date"] = pd.to_datetime(df["time"])
+    df["gage"] = df["gage"].astype(str)
+    return df
 
 
 def expected_image_dates(from_date: datetime.datetime,
@@ -238,3 +241,19 @@ def open_npy_file(fp: str):
     arr = np.load(fp)
     arr[np.isnan(arr)] = 0
     return arr
+
+
+def extract_filename_data(fn: str):
+    """Extract gage, band, and date from a filename using regex."""
+    streamgage = re.findall("\d{8}", fn)  # NOQA
+    assert len(streamgage) == 1, f"No 8-digit streamgage found in filename: {fn}"
+    datestr = re.findall("\d{4}_\d{2}_\d{2}", fn)  # NOQA
+    date = datetime.datetime.strptime(datestr[0], DATE_FORMAT)
+    assert len(datestr) == 1, f"No datestring found in filename: {fn}"
+    band = False
+    for b in ("swe", "et", "temperature_2m", "total_precipitation", "dem"):
+        if b in fn.lower():
+            assert not band, f"Multiple bands in filename: {fn}"
+            band = b
+    assert band, f"No band in filename: {fn}"
+    return {"fn": fn, "band": band, "date": date, "streamgage": streamgage[0]}
