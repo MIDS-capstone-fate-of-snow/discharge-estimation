@@ -156,6 +156,22 @@ class CNNSeqDataset:
                                                     (self.val_start - datetime.timedelta(days=1)),
                                                     recompute=False)
 
+        # DEM dataset:
+        dem_dir = os.path.join(DATA_DIR, "dem")
+        dem_files = os.listdir(dem_dir)
+        self.dem_fps = dict()
+        for gage in self.gages:
+            gage_dems = [f for f in dem_files if gage in f]
+            assert len(gage_dems) == 1
+            self.dem_fps[gage] = os.path.join(dem_dir, gage_dems[0])
+        self.dem_norm_values = pixel_mean_std(*self.dem_fps.values())
+        self.dems_raw, self.dems_norm = dict(), dict()
+        for gage, fp in self.dem_fps.items():
+            tif = TifFile(fp)
+            self.dems_raw[gage] = tif.as_numpy
+            self.dems_norm[gage] = (tif.as_numpy - self.dem_norm_values["pixel_mean"]) / \
+                                   self.dem_norm_values["pixel_std"]
+
     @property
     def saved_img_norm(self):
         with open(self._norm_fp, "r") as f:
@@ -256,7 +272,12 @@ class CNNSeqDataset:
 
     def get_required_filepaths(self, y_date: datetime.datetime, gage: str):
         """Get required image filepaths for a target y-date. Raises errors for
-        missing files."""
+        missing files.
+
+        Args:
+            y_date: the first y-target date.
+            gage: name of the streamgage location.
+        """
         filepaths = dict()
         req_dates = self.get_required_dates(y_date)
         for band, dates in req_dates.items():
@@ -273,11 +294,12 @@ class CNNSeqDataset:
 
         return filepaths
 
-    def filepaths_to_data(self, fps: dict):
+    def filepaths_to_data(self, fps: dict, gage: str):
         """Convert output of `get_required_filepaths` to actual data values.
 
         Args:
             fps: dict output from `get_required_filepaths` method.
+            gage: name of the streamgage location.
         """
         data = dict()
         data["y"] = fps["y"].values
@@ -293,6 +315,7 @@ class CNNSeqDataset:
                     raise ValueError(f"Invalid band: {band}")
                 norm_arr = (arr - self.img_norm[band]["pixel_mean"]) / self.img_norm[band]["pixel_std"]
                 data[band].append(norm_arr)
+        data["dem"] = self.dems_norm[gage]
         return data
 
     def get_training_pairs(self, min_date: datetime.datetime,
@@ -327,14 +350,14 @@ class CNNSeqDataset:
     def train_data_generator(self):
         for gage, y_date in self.train_pairs:
             fps = self.get_required_filepaths(y_date, gage)
-            yield self.filepaths_to_data(fps)
+            yield self.filepaths_to_data(fps, gage)
 
     def val_data_generator(self):
         for gage, y_date in self.val_pairs:
             fps = self.get_required_filepaths(y_date, gage)
-            yield self.filepaths_to_data(fps)
+            yield self.filepaths_to_data(fps, gage)
 
     def test_data_generator(self):
         for gage, y_date in self.test_pairs:
             fps = self.get_required_filepaths(y_date, gage)
-            yield self.filepaths_to_data(fps)
+            yield self.filepaths_to_data(fps, gage)
