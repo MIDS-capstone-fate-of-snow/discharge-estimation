@@ -9,7 +9,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from tif_files import TifFile
-from utils import extract_filename_data, open_npy_file, open_y_data
+from utils import convert_datetime, extract_filename_data, open_swe_file, open_y_data
 
 DATE_FORMAT = "%Y_%m_%d"
 
@@ -23,7 +23,7 @@ class Giffer:
         self.files = list(filter(lambda f: f.endswith(".tif") or f.endswith(".npy"), files))
         file_data = [extract_filename_data(fn) for fn in self.files]
         self.file_df = pd.DataFrame(file_data)
-        self.bands = ['total_precipitation', 'et', 'swe', 'temperature_2m']
+        self.bands = ["swe", "et", "temperature_2m", "total_precipitation"]
         self.filenames = {band: None for band in self.bands}
         self.min_date, self.max_date = min(self.file_df["date"]), max(self.file_df["date"])
         self.date_range = pd.date_range(self.min_date, self.max_date)
@@ -40,10 +40,12 @@ class Giffer:
             tif = TifFile(v)
             self.dems[k] = tif.as_numpy_zero_nan
 
-    def create_frame(self, gage: str, date: datetime.datetime):
+    def create_frame(self, gage: str, date: datetime.datetime,
+                     close: bool = True):
+        date = convert_datetime(date)
         df = self.file_df
         df = df[(df["date"] == date) & (df["streamgage"] == gage)]
-        fig, axes = plt.subplots(1, 6, figsize=(12, 3))
+        fig, axes = plt.subplots(1, 6, figsize=(12, 3), width_ratios=[3.0]*5 + [1.5])
 
         for band in self.bands:
             if band in df["band"].values:
@@ -54,7 +56,7 @@ class Giffer:
             if filename is not None:
                 fp = os.path.join(self.src_directory, filename)
                 if filename.endswith("npy"):
-                    data = open_npy_file(fp)
+                    data = open_swe_file(fp)
                 elif filename.endswith("tif"):
                     data = TifFile(fp).as_numpy_zero_nan
                 else:
@@ -64,6 +66,7 @@ class Giffer:
             ax.set_title(band)
             ax.set_xticks([])
             ax.set_yticks([])
+            [ax.spines[s].set_visible(False) for s in ["left", "right", "bottom", "top"]]
 
         # Plot the DEM:
         ax = axes.flatten()[0]
@@ -71,6 +74,7 @@ class Giffer:
         ax.set_title("DEM")
         ax.set_xticks([])
         ax.set_yticks([])
+        [ax.spines[s].set_visible(False) for s in ["left", "right", "bottom", "top"]]
 
         # Plot the y-variable:
         ax = axes.flatten()[-1]
@@ -78,13 +82,15 @@ class Giffer:
         ax.bar(0, y)
         ax.set_ylim(0, self.y_max[gage])
         ax.set_xticks([])
-        ax.set_title("discharge m3")
+        ax.set_title("discharge")
         ax.yaxis.tick_right()
+        [ax.spines[s].set_visible(False) for s in ["left", "top"]]
 
         img_fp = os.path.join(self.target_directory, f"{gage}_{date.strftime(DATE_FORMAT)}.png")
         fig.suptitle(f"{gage} - {date.strftime('%d %b %Y')}", y=1.05)
         fig.savefig(img_fp, bbox_inches="tight")
-        plt.close()
+        if close:
+            plt.close()
         return img_fp
 
     def create_gif(self, gage: str, fps: int = 25):
@@ -95,13 +101,21 @@ class Giffer:
             png_fps.append(img_fp)
             image = imageio.v2.imread(img_fp)
             frames.append(image)
-        gif_fp = os.path.abspath(os.path.join(self.target_directory, f"{gage}.gif"))
+        name = f"{gage}__{fps}fps__{self.min_date.strftime(DATE_FORMAT)}_to_{self.max_date.strftime(DATE_FORMAT)}.gif"
+        gif_fp = os.path.abspath(os.path.join(self.target_directory, name))
         imageio.mimsave(gif_fp, frames, fps=fps)
         print(gif_fp)
         # Clean up png files:
         for fp in png_fps:
             os.remove(fp)
         return gif_fp
+
+    def delete_pngs(self):
+        files = [f for f in os.listdir(self.target_directory) if f.endswith(".png")]
+        print(f"Deleting {len(files):,} .png files")
+        for f in tqdm(files):
+            fp = os.path.join(self.target_directory, f)
+            os.remove(fp)
 
 
 if __name__ == "__main__":
@@ -115,4 +129,4 @@ if __name__ == "__main__":
     giffer = Giffer(src_dir=TRAIN_DIR, target_dir=IMG_DIR, dem_dir=DEM_DIR)
     gages = ["11185500", "11189500", "11202710", "11208000", "11266500", "11318500", "11402000"]
     for g in gages:
-        gage_gif_fp = giffer.create_gif(g)
+        gage_gif_fp = giffer.create_gif(g, fps=50)

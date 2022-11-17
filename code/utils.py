@@ -240,7 +240,7 @@ def open_npy_file(fp: str):
     with zero."""
     arr = np.load(fp)
     arr[np.isnan(arr)] = 0
-    return arr
+    return np.rot90(arr, k=1, axes=(0, 1))
 
 
 def extract_filename_data(fn: str):
@@ -257,3 +257,11 @@ def extract_filename_data(fn: str):
             band = b
     assert band, f"No band in filename: {fn}"
     return {"fn": fn, "band": band, "date": date, "streamgage": streamgage[0]}
+
+
+def open_swe_file(fp: str):
+    """Open a swe .npy file. Automatically fills in NaN values with zero.
+    Flip images to correct lat-lon alignment."""
+    arr = np.load(fp)
+    arr[np.isnan(arr)] = 0
+    return np.rot90(arr, k=1, axes=(0, 1))

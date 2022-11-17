@@ -5,7 +5,7 @@ earthengine-api==0.1.325
 folium==0.12.1.post1
 geopandas==0.11.1
 imageio>=2.22.0
-matplotlib==3.5.3
+matplotlib>=3.6.2
 multiprocess==0.70.13
 numpy==1.23.3
 oauth2client==4.1.3

@@ -4,13 +4,13 @@ import datetime
 from itertools import product
 import os
 import random
-import re
 import yaml
 
 import pandas as pd
 
 from tif_files import TifFile
-from utils import convert_datetime, expected_image_dates, open_npy_file, pixel_mean_std
+from utils import convert_datetime, expected_image_dates, extract_filename_data, open_npy_file, open_swe_file, \
+    pixel_mean_std
 
 DIR, FILENAME = os.path.split(__file__)
 DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
@@ -103,7 +103,7 @@ class CNNSeqDataset:
             for dr in dirs:
                 filenames = [f for f in os.listdir(dr) if band.lower() in f.lower() and f.endswith(f".{ffmt}")]
                 for fn in filenames:
-                    metadata = self.extract_filename_data(fn)
+                    metadata = extract_filename_data(fn)
                     metadata["full_filepath"] = os.path.join(dr, fn)
                     file_metadata.append(metadata)
             self.file_metadata[band] = file_metadata
@@ -208,22 +208,6 @@ class CNNSeqDataset:
 
         return mu_std
 
-    @staticmethod
-    def extract_filename_data(fn: str):
-        """Extract gage, band, and date from a filename using regex."""
-        streamgage = re.findall("\d{8}", fn)  # NOQA
-        assert len(streamgage) == 1, f"No 8-digit streamgage found in filename: {fn}"
-        datestr = re.findall("\d{4}_\d{2}_\d{2}", fn)  # NOQA
-        date = datetime.datetime.strptime(datestr[0], DATE_FORMAT)
-        assert len(datestr) == 1, f"No datestring found in filename: {fn}"
-        band = False
-        for b in ("swe", "et", "temperature_2m", "total_precipitation"):
-            if b in fn.lower():
-                assert not band, f"Multiple bands in filename: {fn}"
-                band = b
-        assert band, f"No band in filename: {fn}"
-        return {"fn": fn, "band": band, "date": date, "streamgage": streamgage[0]}
-
     def get_xy_date_bounds(self):
         """Calculate date boundaries for dataset based on X-y frequencies."""
         dates = dict()
@@ -309,8 +293,11 @@ class CNNSeqDataset:
                 if self.file_formats[band] == "tif":
                     tif = TifFile(fp)
                     arr = tif.as_numpy_zero_nan
+                elif band == "swe":
+                    arr = open_swe_file(fp)
                 elif self.file_formats[band] == "npy":
-                    arr = open_npy_file(fp)
+                    raise NotImplementedError()
+                    # arr = open_npy_file(fp)
                 else:
                     raise ValueError(f"Invalid band: {band}")
                 norm_arr = (arr - self.img_norm[band]["pixel_mean"]) / self.img_norm[band]["pixel_std"]
