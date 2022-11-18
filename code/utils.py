@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import requests
 from shapely import affinity, geometry
+from tqdm import tqdm
 
 from tif_files import TifFile
 
@@ -206,7 +207,8 @@ def pixel_mean_std(*img_fp):
     total_img_sum_sq = 0
     total_num_pixels = 0
 
-    for fp in img_fp:
+    print(f"Calculating pixel mean/std from {len(img_fp)} images")
+    for fp in tqdm(img_fp):
         if fp.endswith(".tif"):  # .tif file
             tif = TifFile(fp)
             np_arr = tif.as_numpy_zero_nan

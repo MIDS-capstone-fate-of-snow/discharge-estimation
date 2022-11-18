@@ -9,8 +9,7 @@ import yaml
 import pandas as pd
 
 from tif_files import TifFile
-from utils import convert_datetime, expected_image_dates, extract_filename_data, open_npy_file, open_swe_file, \
-    pixel_mean_std
+from utils import convert_datetime, expected_image_dates, extract_filename_data, open_swe_file, pixel_mean_std
 
 DIR, FILENAME = os.path.split(__file__)
 DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
@@ -35,6 +34,7 @@ class CNNSeqDataset:
                  max_date: str = "2016_12_31",
                  val_start: str = "2015_01_01",
                  test_start: str = "2016_01_01",
+                 gages: list = None,
                  random_seed: int = 42,
                  shuffle_train: bool = True):
         """Construct image training dataset for training CNN sequence models.
@@ -66,13 +66,28 @@ class CNNSeqDataset:
         self.swe_d_rel = list(swe_d_rel)
         self.n_d_y = n_d_y
 
-        self.min_date = datetime.datetime.strptime(min_date, DATE_FORMAT)
-        self.max_date = datetime.datetime.strptime(max_date, DATE_FORMAT)
-        self.val_start = datetime.datetime.strptime(val_start, DATE_FORMAT)
-        self.test_start = datetime.datetime.strptime(test_start, DATE_FORMAT)
+        self.min_date = convert_datetime(min_date)
+        self.max_date = convert_datetime(max_date)
+        self.val_start = convert_datetime(val_start)
+        self.test_start = convert_datetime(test_start)
 
         self.random_seed = random_seed
         self.shuffle_train = shuffle_train
+
+        # Outcome data:
+        self.y_col = y_col
+        self.y_fp = y_fp
+        self.y_df = pd.read_csv(y_fp, encoding="utf-8")
+        self.y_df["gage"] = self.y_df["gage"].astype(str)
+        self.y_df["date"] = pd.to_datetime(self.y_df["time"])
+        self.y = self.y_df.set_index(["gage", "date"])[self.y_col]
+
+        # Gages:
+        if gages is None:
+            self.gages = [str(g) for g in self.y_df["gage"].unique()]
+        else:
+            assert isinstance(gages, list), f"`gages` must be list of int/str"
+            self.gages = [str(g) for g in gages]
 
         # Expected dates for MODIS:
         modis_dates = pd.Series(sorted(expected_image_dates(self.min_date, self.max_date, 8)))
@@ -121,16 +136,6 @@ class CNNSeqDataset:
             ["streamgage", "band", "date", "full_filepath"]
         ].set_index(["streamgage", "band", "date"]).sort_index()
 
-        # Outcome data:
-        self.y_col = y_col
-        self.y_fp = y_fp
-        self.y_df = pd.read_csv(y_fp, encoding="utf-8")
-        self.y_df["gage"] = self.y_df["gage"].astype(str)
-        self.y_df["date"] = pd.to_datetime(self.y_df["time"])
-        self.y = self.y_df.set_index(["gage", "date"])[self.y_col]
-
-        # Gages and bands in the data:
-        self.gages = self.y_df["gage"].unique()
         self.bands = self.metadata_df["band"].unique()
 
         # Calculate which dates can be used for each gage:
@@ -169,8 +174,8 @@ class CNNSeqDataset:
         for gage, fp in self.dem_fps.items():
             tif = TifFile(fp)
             self.dems_raw[gage] = tif.as_numpy
-            self.dems_norm[gage] = (tif.as_numpy - self.dem_norm_values["pixel_mean"]) / \
-                                   self.dem_norm_values["pixel_std"]
+            self.dems_norm[gage] = (tif.as_numpy - self.dem_norm_values["pixel_mean"]) /\
+                self.dem_norm_values["pixel_std"]
 
     @property
     def saved_img_norm(self):
@@ -178,19 +183,29 @@ class CNNSeqDataset:
             return yaml.safe_load(f)
 
     def get_img_norm(self, band: str, date_from: datetime.datetime,
-                     date_to: datetime.datetime,
-                     recompute: bool = False):
+                     date_to: datetime.datetime, recompute: bool = False):
+        """Compute pixel normalization values across all images within the dates
+        given for the given band. Only uses images for gages at `self.gages`."""
+        # Key to identify gages used:
+        gage_key = "_".join(sorted(self.gages))
+        
+        # Filter metadata to get required image filepaths:
         date_from = convert_datetime(date_from, DATE_FORMAT)
         date_to = convert_datetime(date_to, DATE_FORMAT)
-        df = self.metadata_df[(self.metadata_df["date"] >= date_from) & (self.metadata_df["date"] <= date_to) &
-                              (self.metadata_df["band"] == band.strip().lower())]
-        # Get the actual min/max dates possible with current data:
+        df = self.metadata_df[
+            (self.metadata_df["date"] >= date_from) & 
+            (self.metadata_df["date"] <= date_to) &
+            (self.metadata_df["band"] == band.strip().lower()) &
+            (self.metadata_df["streamgage"].isin(self.gages))
+        ]
+        
+        # Get the actual min/max dates possible with the data:
         date_from, date_to = min(df["date"]), max(df["date"])
-        key = f"{date_from.strftime(DATE_FORMAT)}_to_{date_to.strftime(DATE_FORMAT)}"
+        date_key = f"{date_from.strftime(DATE_FORMAT)}_to_{date_to.strftime(DATE_FORMAT)}"
 
         if not recompute:  # Try to fetch precomputed values:
             try:
-                return self.saved_img_norm[band][key]
+                return self.saved_img_norm[gage_key][band][date_key]
             except KeyError:
                 pass
 
@@ -199,12 +214,14 @@ class CNNSeqDataset:
 
         # Save values:
         saved = self.saved_img_norm
-        if band not in saved.keys():
-            saved[band] = dict()
-        saved[band][key] = mu_std
+        if gage_key not in saved.keys():
+            saved[gage_key] = dict()
+        if band not in saved[gage_key].keys():
+            saved[gage_key][band] = dict()
+        saved[gage_key][band][date_key] = mu_std
         with open(self._norm_fp, "w") as f:
             yaml.safe_dump(saved, f)
-        print(f"Save image pixel mean/std for band `{band}`, date key `{key}`")
+        print(f"Save image pixel mean/std for gages `{gage_key}`, band `{band}`, dates `{date_key}`")
 
         return mu_std
 
