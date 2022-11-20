@@ -6,6 +6,7 @@ import os
 import random
 import yaml
 
+import numpy as np
 import pandas as pd
 
 from tif_files import TifFile
@@ -174,8 +175,8 @@ class CNNSeqDataset:
         for gage, fp in self.dem_fps.items():
             tif = TifFile(fp)
             self.dems_raw[gage] = tif.as_numpy
-            self.dems_norm[gage] = (tif.as_numpy - self.dem_norm_values["pixel_mean"]) /\
-                self.dem_norm_values["pixel_std"]
+            self.dems_norm[gage] = (tif.as_numpy - self.dem_norm_values["pixel_mean"]) / \
+                                   self.dem_norm_values["pixel_std"]
 
     @property
     def saved_img_norm(self):
@@ -188,17 +189,17 @@ class CNNSeqDataset:
         given for the given band. Only uses images for gages at `self.gages`."""
         # Key to identify gages used:
         gage_key = "_".join(sorted(self.gages))
-        
+
         # Filter metadata to get required image filepaths:
         date_from = convert_datetime(date_from, DATE_FORMAT)
         date_to = convert_datetime(date_to, DATE_FORMAT)
         df = self.metadata_df[
-            (self.metadata_df["date"] >= date_from) & 
+            (self.metadata_df["date"] >= date_from) &
             (self.metadata_df["date"] <= date_to) &
             (self.metadata_df["band"] == band.strip().lower()) &
             (self.metadata_df["streamgage"].isin(self.gages))
-        ]
-        
+            ]
+
         # Get the actual min/max dates possible with the data:
         date_from, date_to = min(df["date"]), max(df["date"])
         date_key = f"{date_from.strftime(DATE_FORMAT)}_to_{date_to.strftime(DATE_FORMAT)}"
@@ -261,7 +262,10 @@ class CNNSeqDataset:
         et_max = y_date
         et_min = y_date - datetime.timedelta(days=self.n_d_et)
         et_dates = self.modis_dates[(self.modis_dates >= et_min) & (self.modis_dates < et_max)]
-        req_dates["et"] = et_dates.values
+        # TODO: this is a hack to make sure ET only ever yields 1 image.
+        et_dates = et_dates.values[-1:]
+        assert len(et_dates) == 1
+        req_dates["et"] = et_dates
 
         # SWE dates:
         swe_dates = list()
@@ -292,7 +296,7 @@ class CNNSeqDataset:
                     filepaths[band] = self.y.loc[gage].loc[dates]
                 except KeyError:
                     raise FileNotFoundError(f"Missing images for {gage=}, {band=}, {dates=}")
-
+        filepaths["debug_data"] = (y_date, gage)
         return filepaths
 
     def filepaths_to_data(self, fps: dict, gage: str):
@@ -305,7 +309,7 @@ class CNNSeqDataset:
         data = dict()
         data["y"] = fps["y"].values
         for band in ("temp", "precip", "et", "swe"):
-            data[band] = list()
+            arrays = list()
             for fp in fps[band]:
                 if self.file_formats[band] == "tif":
                     tif = TifFile(fp)
@@ -318,8 +322,10 @@ class CNNSeqDataset:
                 else:
                     raise ValueError(f"Invalid band: {band}")
                 norm_arr = (arr - self.img_norm[band]["pixel_mean"]) / self.img_norm[band]["pixel_std"]
-                data[band].append(norm_arr)
-        data["dem"] = self.dems_norm[gage]
+                arrays.append(norm_arr)
+            data[band] = np.array(arrays)
+        data["dem"] = np.array([self.dems_norm[gage]])
+        data["debug_data"] = fps["debug_data"]
         return data
 
     def get_training_pairs(self, min_date: datetime.datetime,
