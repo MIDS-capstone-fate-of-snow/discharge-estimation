@@ -3,10 +3,20 @@ import os
 from PIL import Image  # NOQA
 
 import folium
+import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
 from rasterio.plot import show
+
+DIR, FILENAME = os.path.split(__file__)
+DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
+MASK_DIR = os.path.join(DATA_DIR, "masks")
+if not os.path.exists(MASK_DIR):
+    os.mkdir(MASK_DIR)
+BASIN_DIR = os.path.join(DATA_DIR, "usgs_basins")
+if not os.path.exists(BASIN_DIR):
+    os.mkdir(BASIN_DIR)
 
 
 class TifFile:
@@ -27,6 +37,26 @@ class TifFile:
     @property
     def shape(self):
         return self.as_numpy.shape
+
+    @property
+    def num_rows(self):
+        """Number of pixel rows in the image, i.e. magnitude of y-axis."""
+        return self.shape[0]
+
+    @property
+    def num_columns(self):
+        """Number of pixel columns in the image, i.e. magnitude of x-axis."""
+        return self.shape[1]
+
+    @property
+    def pixel_width_lon(self):
+        """Width of a pixel in units of longitude."""
+        return (self.bounds.right - self.bounds.left) / self.num_columns
+
+    @property
+    def pixel_height_lat(self):
+        """Height of a pixel in units of latitude."""
+        return (self.bounds.top - self.bounds.bottom) / self.num_rows
 
     @property
     def num_pixels(self):
@@ -132,6 +162,125 @@ class TifFile:
                 folium.Rectangle([(min_lat, min_lon), (max_lat, max_lon)],
                                  color=color, weight=weight, fill=True, fill_opacity=fill_opacity).add_to(my_map)
         return my_map
+
+    def pixel_shape(self, row: int, col: int):
+        """Get Polygon of the shape of an individual pixel in the image.
+
+        Args:
+            row: vertical pixel index of the row.
+            col: horizontal pixel index of the column.
+        """
+        from utils import get_polygon
+
+        assert 0 <= col <= self.num_columns
+        assert 0 <= row <= self.num_rows
+
+        left = self.min_lon + (self.pixel_width_lon * col)
+        right = self.min_lon + (self.pixel_width_lon * (col+1))
+        bottom = self.min_lat + (self.pixel_height_lat * row)
+        top = self.min_lat + (self.pixel_height_lat * (row+1))
+
+        return get_polygon(left, bottom, right, top, buffer_percent=0)
+
+    @property
+    def as_polygon(self):
+        """Return the full area of the image as a Polygon."""
+        from utils import get_polygon
+        return get_polygon(self.bounds.left, self.bounds.bottom, self.bounds.right, self.bounds.top, buffer_percent=0)
+
+    def calculate_mask(self, geojson_fp: str):
+        """Calculate the intersection mask of this image's pixels with a GeoJson
+        file of an irregular geometry (i.e. a watershed area)."""
+        gdf = gpd.read_file(geojson_fp)
+        basin_geo = gdf[gdf["id"] == "globalwatershed"]["geometry"].iloc[0]
+        ratio_list = list()
+        for row in list(range(self.num_rows))[::-1]:  # Iterate rows backwards so they are appended top to bottom.
+            row_values = list()
+            for col in range(self.num_columns):
+                pxl = self.pixel_shape(row, col)
+                intersection = pxl.intersection(basin_geo).area
+                ratio = intersection / pxl.area
+                row_values.append(ratio)
+            ratio_list.append(row_values)
+        mask = np.array(ratio_list)
+        return mask
+
+    def get_mask(self, gage: str, band: str):
+        mask = self.load_mask(gage, band)
+        if mask is None:
+            geojson_fp = os.path.join(BASIN_DIR, f"{gage}.geojson")
+            assert os.path.exists(geojson_fp), f"USGS basin file not found: {geojson_fp}"
+            mask = self.calculate_mask(geojson_fp)
+            self.save_mask(mask, gage, band)
+        return mask
+
+    def plot_mask(self, gage: str, band: str, suptitle: str = None):
+        """Plot the tif's image masked by an irregular geometry from a GeoJSON
+        file (i.e. a watershed area)."""
+        mask = self.get_mask(gage, band)
+
+        fig, axes = plt.subplots(1, 5, figsize=(13, 3))
+
+        vmax = self.pixel_nanmax
+
+        # Original image:
+        ax = axes[0]
+        self.plot(ax)
+        ax.imshow(self.as_numpy, vmin=0, vmax=vmax)
+        ax.set_title("Original Image")
+
+        # Ratio mask:
+        ax = axes[1]
+        ax.imshow(mask, vmin=0, vmax=1)
+        ax.set_title("Ratio Mask")
+
+        # Ratio masked image:
+        ratio_masked_img = np.where(mask == 0, 0, self.as_numpy * mask)
+        ax = axes[2]
+        ax.imshow(ratio_masked_img, vmin=0, vmax=vmax)
+        ax.set_title("Ratio Masked Image")
+
+        # Boolean mask:
+        ax = axes[3]
+        bool_mask = np.where(mask, 1, 0)
+        ax.imshow(bool_mask, vmin=0, vmax=1)
+        ax.set_title("Bool Mask")
+
+        # Boolean masked image:
+        ax = axes[4]
+        bool_masked_img = np.where(bool_mask, self.as_numpy, 0)
+        ax.imshow(bool_masked_img, vmin=0, vmax=vmax)
+        ax.set_title("Bool Masked Image")
+
+        for ax in axes.flatten()[1:]:
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+        if suptitle is not None:
+            fig.suptitle(suptitle)
+
+        return fig
+
+    @staticmethod
+    def save_mask(mask: np.array, gage: str, band: str):
+        """Save image mask as a numpy.array"""
+        h, w = mask.shape
+        mask_name = f"{gage}__{band.lower()}__h{h}_w{w}.npy"
+        fp = os.path.join(MASK_DIR, mask_name)
+        np.save(fp, mask, allow_pickle=False)
+        return fp
+
+    def load_mask(self, gage: str, band: str):
+        """Attempt to load a saved mask matching the current image's shape.
+        Returns None if mask doesn't exist."""
+        from utils import open_npy_file
+        h, w = self.shape
+        mask_name = f"{gage}__{band.lower()}__h{h}_w{w}.npy"
+        fp = os.path.join(MASK_DIR, mask_name)
+        try:
+            return open_npy_file(fp)
+        except FileNotFoundError:
+            return None
 
 
 class TifDir:

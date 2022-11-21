@@ -7,6 +7,8 @@ import string
 
 from bs4 import BeautifulSoup
 import folium
+import geopandas as gpd
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import requests
@@ -21,6 +23,15 @@ DATE_FORMAT = "%Y_%m_%d"
 
 DIR, FILENAME = os.path.split(__file__)
 DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
+MASK_DIR = os.path.join(DATA_DIR, "masks")
+if not os.path.exists(MASK_DIR):
+    os.mkdir(MASK_DIR)
+BASIN_DIR = os.path.join(DATA_DIR, "usgs_basins")
+if not os.path.exists(BASIN_DIR):
+    os.mkdir(BASIN_DIR)
+SAMPLE_DIR = os.path.join(DATA_DIR, "sample_images")
+if not os.path.exists(SAMPLE_DIR):
+    os.mkdir(SAMPLE_DIR)
 
 
 def list_streamgage_files(directory: str):
@@ -48,7 +59,8 @@ def remove_punctuation(s: str):
     return s.translate(str.maketrans(PUNCTUATION))
 
 
-def get_polygon(left: float, bottom: float, right: float, top: float, buffer_percent: float = 0.05):
+def get_polygon(left: float, bottom: float, right: float, top: float,
+                buffer_percent: float = 0.05):
     coords = [
         [left, top],
         [right, top],
@@ -242,7 +254,7 @@ def open_npy_file(fp: str):
     with zero."""
     arr = np.load(fp)
     arr[np.isnan(arr)] = 0
-    return np.rot90(arr, k=1, axes=(0, 1))
+    return arr
 
 
 def extract_filename_data(fn: str):
@@ -267,3 +279,143 @@ def open_swe_file(fp: str):
     arr = np.load(fp)
     arr[np.isnan(arr)] = 0
     return np.rot90(arr, k=1, axes=(0, 1))
+
+
+def get_swe_mask(swe_fp: str):
+    """For an input SWE image, get the mask of its intersection with a GeoJson
+    file of an irregular geometry (i.e. a watershed area)."""
+    # Get gage name from filename:
+    fn = swe_fp.split("/")[-1]
+    gage = re.findall("\d{8}", fn)  # NOQA
+    assert len(gage) == 1
+    gage = gage[0]
+
+    # See if mask is already saved:
+    swe_arr = open_swe_file(swe_fp)
+    h, w = swe_arr.shape
+    mask_name = f"{gage}__swe__h{h}_w{w}.npy"
+    fp = os.path.join(MASK_DIR, mask_name)
+    if os.path.exists(fp):
+        return open_npy_file(fp)
+    else:
+        return calculate_swe_mask(swe_fp, gage)
+
+
+def calculate_swe_mask(swe_fp: str, gage: str):
+    """Calculate the intersection mask of an SWE image's pixels with a GeoJson
+    file of an irregular geometry (i.e. a watershed area)."""
+    swe_arr = open_swe_file(swe_fp)
+
+    num_rows, num_columns = swe_arr.shape
+
+    # Get the bounding box of the SWE numpy array:
+    bboxes_fp = os.path.join(DATA_DIR, "watershed_bounding_boxes.json")
+    with open(bboxes_fp, "r") as f:
+        bboxes = json.load(f)
+    bbox = bboxes[gage]
+    min_lon, min_lat, max_lon, max_lat = bbox
+
+    # Calculate the lon/lat size of each pixel:
+    pixel_width_lon = (max_lon - min_lon) / num_columns
+    pixel_height_lat = (max_lat - min_lat) / num_rows
+
+    # Load the basin geometry:
+    geojson_fp = os.path.join(BASIN_DIR, f"{gage}.geojson")
+    assert os.path.exists(geojson_fp), f"USGS basin file not found: {geojson_fp}"
+    gdf = gpd.read_file(geojson_fp)
+    basin_geo = gdf[gdf["id"] == "globalwatershed"]["geometry"].iloc[0]
+
+    def pixel_shape(r, c):
+        left = min_lon + (pixel_width_lon * c)
+        right = min_lon + (pixel_width_lon * (c+1))
+        bottom = min_lat + (pixel_height_lat * r)
+        top = min_lat + (pixel_height_lat * (r+1))
+        return get_polygon(left, bottom, right, top, buffer_percent=0)
+
+    # Compute the mask:
+    ratio_list = list()
+    for row in list(range(swe_arr.shape[0]))[::-1]:  # Iterate rows backwards so they are appended top to bottom.
+        row_values = list()
+        for col in range(swe_arr.shape[1]):
+            pxl = pixel_shape(row, col)
+            intersection = pxl.intersection(basin_geo).area
+            ratio = intersection / pxl.area
+            row_values.append(ratio)
+        ratio_list.append(row_values)
+    mask = np.array(ratio_list)
+
+    # Save the mask:
+    h, w = mask.shape
+    mask_name = f"{gage}__swe__h{h}_w{w}.npy"
+    fp = os.path.join(MASK_DIR, mask_name)
+    np.save(fp, mask, allow_pickle=False)
+
+    return mask
+
+
+def plot_masks(gage: str):
+    """Plot all masks for the givenn streamgage."""
+    fig, axes = plt.subplots(4, 5, figsize=(8, 10))
+
+    sample_files = [f for f in os.listdir(SAMPLE_DIR) if gage in f]
+    mask_files = [f for f in os.listdir(MASK_DIR) if gage in f]
+
+    flat_axes = axes.flatten()
+    for i, band in enumerate(("swe", "et", "precip", "temp")):
+
+        sample = [f for f in sample_files if band in f.lower()][0]
+        sample_fp = os.path.join(SAMPLE_DIR, sample)
+        if sample_fp.endswith(".tif"):
+            tif = TifFile(sample_fp)
+            sample_arr = tif.as_numpy
+            vmax = tif.pixel_nanmax
+        elif sample_fp.endswith(".npy"):
+            sample_arr = open_swe_file(sample_fp)
+            vmax = np.nanmax(sample_arr)
+        else:
+            raise TypeError(f"Unknown file type: {sample_fp}")
+
+        mask_fn = [f for f in mask_files if band in f.lower()][0]
+        mask_arr = open_npy_file(os.path.join(MASK_DIR, mask_fn))
+
+        sample_ix = i * 5
+        ax = flat_axes[sample_ix]
+        ax.imshow(sample_arr, vmin=0, vmax=vmax)
+        ax.set_title(f"{band.upper()}")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        mask_ix = sample_ix + 1
+        ax = flat_axes[mask_ix]
+        ax.imshow(mask_arr, vmin=0, vmax=1)
+        ax.set_title("Ratio Mask")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        masked_ix = mask_ix + 1
+        ax = flat_axes[masked_ix]
+        ratio_masked = np.where(mask_arr == 0, 0, mask_arr * sample_arr)
+        ax.imshow(ratio_masked, vmin=0, vmax=vmax)
+        ax.set_title("Ratio Masked")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        bool_mask = np.where(mask_arr, 1, 0)
+        bool_mask_ix = masked_ix + 1
+        ax = flat_axes[bool_mask_ix]
+        ax.imshow(bool_mask, vmin=0, vmax=1)
+        ax.set_title("Bool Mask")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        bool_masked_ix = bool_mask_ix + 1
+        ax = flat_axes[bool_masked_ix]
+        bool_masked = np.where(bool_mask == 0, 0, sample_arr)
+        ax.imshow(bool_masked, vmin=0, vmax=vmax)
+        ax.set_title("Bool Masked")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    fig.suptitle(f"Gage = {gage}")
+
+    return fig
