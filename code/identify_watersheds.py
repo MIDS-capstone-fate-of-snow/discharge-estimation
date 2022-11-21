@@ -1,5 +1,10 @@
 """Class to identify the upstream watershed from a given lat-long point."""
 
+import warnings
+warnings.warn("The WatershedIdentifier class and scripts in identify_watersheds.py are deprecated and kept for "
+              "archival purposes only. The watersheds for each streamgage location are now identified using the USGS"
+              "'StreamStats' tool (https://streamstats.usgs.gov/ss/)")
+
 import datetime
 import os
 import time
