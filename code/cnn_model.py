@@ -1,5 +1,6 @@
 """Code for training a CNN-based sequence model using raw satellite images."""
 
+from collections import defaultdict
 import datetime
 from itertools import product
 import os
@@ -10,7 +11,8 @@ import numpy as np
 import pandas as pd
 
 from tif_files import TifFile
-from utils import convert_datetime, expected_image_dates, extract_filename_data, open_swe_file, pixel_mean_std
+from utils import convert_datetime, expected_image_dates, extract_filename_data, open_npy_file, open_swe_file, \
+    pixel_mean_std
 
 DIR, FILENAME = os.path.split(__file__)
 DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
@@ -35,6 +37,7 @@ class CNNSeqDataset:
                  max_date: str = "2016_12_31",
                  val_start: str = "2015_01_01",
                  test_start: str = "2016_01_01",
+                 use_masks: bool = True,
                  gages: list = None,
                  random_seed: int = 42,
                  shuffle_train: bool = True):
@@ -71,6 +74,8 @@ class CNNSeqDataset:
         self.max_date = convert_datetime(max_date)
         self.val_start = convert_datetime(val_start)
         self.test_start = convert_datetime(test_start)
+
+        self.use_masks = use_masks
 
         self.random_seed = random_seed
         self.shuffle_train = shuffle_train
@@ -176,7 +181,12 @@ class CNNSeqDataset:
             tif = TifFile(fp)
             self.dems_raw[gage] = tif.as_numpy
             self.dems_norm[gage] = (tif.as_numpy - self.dem_norm_values["pixel_mean"]) / \
-                                   self.dem_norm_values["pixel_std"]
+                self.dem_norm_values["pixel_std"]
+
+        if self.use_masks:
+            self.ratio_masks, self.bool_masks = self.get_watershed_masks()
+        else:
+            self.ratio_masks, self.bool_masks = None, None
 
     @property
     def saved_img_norm(self):
@@ -296,15 +306,14 @@ class CNNSeqDataset:
                     filepaths[band] = self.y.loc[gage].loc[dates]
                 except KeyError:
                     raise FileNotFoundError(f"Missing images for {gage=}, {band=}, {dates=}")
-        filepaths["debug_data"] = (y_date, gage)
+        filepaths["debug_data"] = dict(y_date=y_date, gage=gage)
         return filepaths
 
-    def filepaths_to_data(self, fps: dict, gage: str):
+    def filepaths_to_data(self, fps: dict):
         """Convert output of `get_required_filepaths` to actual data values.
 
         Args:
             fps: dict output from `get_required_filepaths` method.
-            gage: name of the streamgage location.
         """
         data = dict()
         data["y"] = fps["y"].values
@@ -324,8 +333,14 @@ class CNNSeqDataset:
                 norm_arr = (arr - self.img_norm[band]["pixel_mean"]) / self.img_norm[band]["pixel_std"]
                 arrays.append(norm_arr)
             data[band] = np.array(arrays)
+        gage = fps["debug_data"]["gage"]
         data["dem"] = np.array([self.dems_norm[gage]])
         data["debug_data"] = fps["debug_data"]
+
+        # Apply masking if required:
+        if self.use_masks:
+            data = self.apply_watershed_masks(data)
+
         return data
 
     def get_training_pairs(self, min_date: datetime.datetime,
@@ -340,6 +355,43 @@ class CNNSeqDataset:
         max_date = convert_datetime(max_date, DATE_FORMAT)
         y_dates = self.y_dates[(self.y_dates >= min_date) & (self.y_dates <= max_date)]
         return list(product(self.gages, y_dates))
+
+    def get_watershed_masks(self):
+        """Get the watershed masks for each image type."""
+        mask_dir = os.path.join(DATA_DIR, "masks")
+        mask_files = [f for f in os.listdir(mask_dir) if f.endswith(".npy")]
+        ratio_masks, bool_masks = defaultdict(dict), defaultdict(dict)
+        for band in ("temp", "dem", "precip", "et", "swe"):
+            for gage in self.gages:
+                files = list(filter(lambda f: (gage in f.lower()) and (band in f.lower()), mask_files))
+                assert len(files) == 1
+                arr = open_npy_file(os.path.join(mask_dir, files[0]))
+                ratio_masks[band][gage] = arr
+                bool_masks[band][gage] = np.where(arr, 1, 0)
+
+        return ratio_masks, bool_masks
+
+    def apply_watershed_masks(self, data: dict):
+        """Apply watershed masks to training data images."""
+        gage = data["debug_data"]["gage"]
+        masked_data = data.copy()
+        for band in ("temp", "dem", "precip", "et", "swe"):
+            if band not in data:
+                continue
+            mask = None
+            if band in ("temp", "dem"):  # Apply boolean masking:
+                mask = self.bool_masks[band][gage]
+            elif band in ("precip", "et", "swe"):  # Apply ratio masking:
+                mask = self.ratio_masks[band][gage]
+            if mask is not None:
+                arrays = data[band]
+                masked_arrays = list()
+                for i, arr in enumerate(arrays):
+                    assert mask.shape == arr.shape, f"Mask doesn't match array shape: {gage=}, {band=}, {i=}"
+                    masked_arr = arr * mask
+                    masked_arrays.append(masked_arr)
+                masked_data[band] = np.array(masked_arrays)
+        return masked_data
 
     def date_generator(self):
         for y_date in self.y_dates:
@@ -360,14 +412,14 @@ class CNNSeqDataset:
     def train_data_generator(self):
         for gage, y_date in self.train_pairs:
             fps = self.get_required_filepaths(y_date, gage)
-            yield self.filepaths_to_data(fps, gage)
+            yield self.filepaths_to_data(fps)
 
     def val_data_generator(self):
         for gage, y_date in self.val_pairs:
             fps = self.get_required_filepaths(y_date, gage)
-            yield self.filepaths_to_data(fps, gage)
+            yield self.filepaths_to_data(fps)
 
     def test_data_generator(self):
         for gage, y_date in self.test_pairs:
             fps = self.get_required_filepaths(y_date, gage)
-            yield self.filepaths_to_data(fps, gage)
+            yield self.filepaths_to_data(fps)
