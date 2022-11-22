@@ -109,50 +109,53 @@ class TransformerDecoder(layers.Layer):
         return self.layernorm_3(attention_output_2 + proj_output)
 
 
+def time_dist_cnn(observation_period: int, band_name: str,
+                  n_filters: int = 16, kernel_size: tuple = (2, 2),
+                  strides: tuple = (1, 1), activation: str = "relu",
+                  inputs=None):
+    """Create time-distributed CNN with GAP."""
+    if inputs is None:
+        inputs = keras.Input(shape=(observation_period, None, None, 1),
+                             batch_size=None, name=f"{band_name}_inputs")
+    conv_2d_layer = layers.Conv2D(filters=n_filters, kernel_size=kernel_size,
+                                  strides=strides, activation=activation)
+    x = layers.TimeDistributed(conv_2d_layer, name=f"{band_name}_conv2d")(inputs)
+    pooling_layer = layers.GlobalAveragePooling2D(data_format="channels_last", keepdims=False)
+    outputs = layers.TimeDistributed(pooling_layer, name=f"{band_name}_global_pooling")(x)
+    return inputs, outputs
+
+
 class GAPTransArchitecture:
-    """CNN architecture using Global Average Pooling and Trasnformer."""
+    """CNN architecture using Global Average Pooling and Transformer."""
 
     def __init__(self):
         pass
 
     @staticmethod
-    def time_dist_cnn(observation_period: int, band_name: str,
-                      n_filters: int = 16, kernel_size: tuple = (2, 2),
-                      strides: tuple = (1, 1), activation: str = "relu"):
-        """Create time-distributed CNN with GAP."""
-        inputs = keras.Input(shape=(observation_period, None, None, 1),
-                             batch_size=None, name=f"{band_name}_inputs")
-        conv_2d_layer = layers.Conv2D(filters=n_filters, kernel_size=kernel_size,
-                                      strides=strides, activation=activation)
-        x = layers.TimeDistributed(conv_2d_layer, name=f"{band_name}_conv2d")(inputs)
-        pooling_layer = layers.GlobalAveragePooling2D(data_format="channels_last", keepdims=False)
-        outputs = layers.TimeDistributed(pooling_layer, name=f"{band_name}_global_pooling")(x)
-        return inputs, outputs
-
-    def get_model(self, dem_kernal=(5, 5), dem_strides=(1, 1),
+    def get_model(dem_kernal=(5, 5), dem_strides=(1, 1),
                   et_kernal=(4, 4), et_strides=(1, 1),
                   temp_kernal=(2, 2), temp_strides=(1, 1),
                   precip_kernal=(2, 2), precip_strides=(1, 1),
                   swe_kernal=(5, 5), swe_strides=(1, 1),
                   n_days_precip=7, n_days_temp=7,
-                  swe_days_relative=range(7, 85, 7),
+                  n_swe=12,
                   enc_embed_dim=16, enc_dense_dim=32, enc_num_heads=2,
                   dec_embed_dim=16, dec_dense_dim=32, dec_num_heads=2,
                   n_y=14, hidden_dim=16, dropout=0.5):
         """Create a new CNN model architecture with the specified parameters."""
         # Single image CNN inputs - dem / et:
-        dem_inputs, dem_outputs = self.time_dist_cnn(
+        dem_inputs, dem_outputs = time_dist_cnn(
             1, "dem", hidden_dim, kernel_size=dem_kernal, strides=dem_strides)
-        et_inputs, et_outputs = self.time_dist_cnn(
+        et_inputs, et_outputs = time_dist_cnn(
             1, "et", hidden_dim, kernel_size=et_kernal, strides=et_strides)
 
         # Multiple image CNN inputs - temp / precip / swe:
-        temp_inputs, temp_outputs = self.time_dist_cnn(
+        temp_inputs, temp_outputs = time_dist_cnn(
             n_days_temp, "temp", hidden_dim, kernel_size=temp_kernal, strides=temp_strides)
-        precip_inputs, precip_outputs = self.time_dist_cnn(
+        precip_inputs, precip_outputs = time_dist_cnn(
             n_days_precip, "precip", hidden_dim, kernel_size=precip_kernal, strides=precip_strides)
-        swe_inputs, swe_outputs = self.time_dist_cnn(
-            len(list(swe_days_relative)), "swe", hidden_dim, kernel_size=swe_kernal, strides=swe_strides)
+        swe_inputs, swe_outputs = time_dist_cnn(
+            n_swe, "swe", hidden_dim, kernel_size=swe_kernal, strides=swe_strides)
 
         # Concatenate CNN outputs:
         concat = tf.keras.layers.Concatenate(axis=1)(
@@ -172,4 +175,130 @@ class GAPTransArchitecture:
 
         # Create the model:
         transformer = keras.Model([dem_inputs, temp_inputs, precip_inputs, swe_inputs, et_inputs], decoder_outputs)
+        return transformer
+
+
+class GAPTransMaxArchitecture:
+    """CNN architecture using Global Average Pooling and Transformer, plus max-
+    pooling layers to resize larger images."""
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def et_cnn(observation_period: int, activation: str = "relu"):
+        inputs = keras.Input(shape=(observation_period, None, None, 1), batch_size=None, name="ET_inputs")
+
+        # First convolutional layer:
+        conv_2d_layer = layers.Conv2D(
+            filters=1, kernel_size=(3, 3), strides=(2, 2), activation=activation)
+        x = layers.TimeDistributed(conv_2d_layer, name=f"ET_conv2d_0")(inputs)
+        pooling_layer = layers.MaxPooling2D()
+        outputs = layers.TimeDistributed(pooling_layer, name=f"ET_max_pooling_0")(x)
+
+        # Second convolutional layer:
+        conv_2d_layer1 = layers.Conv2D(
+            filters=1, kernel_size=(2, 2), strides=(1, 1), activation=activation)
+        x = layers.TimeDistributed(conv_2d_layer1, name="ET_conv2d_1")(outputs)
+        pooling_layer1 = layers.MaxPooling2D()
+        outputs1 = layers.TimeDistributed(pooling_layer1, name=f"ET_max_pooling_1")(x)
+
+        return inputs, outputs1
+
+    @staticmethod
+    def swe_cnn(observation_period: int, activation: str = "relu"):
+        inputs = keras.Input(shape=(observation_period, None, None, 1), batch_size=None, name="SWE_inputs")
+
+        # First convolutional layer:
+        conv_2d_layer = layers.Conv2D(
+            filters=1, kernel_size=(5, 5), strides=(3, 3), activation=activation)
+        x = layers.TimeDistributed(conv_2d_layer, name=f"SWE_conv2d_0")(inputs)
+        pooling_layer = layers.MaxPooling2D()
+        outputs = layers.TimeDistributed(pooling_layer, name=f"SWE_max_pooling_0")(x)
+
+        # Second convolutional layer:
+        conv_2d_layer1 = layers.Conv2D(
+            filters=1, kernel_size=(3, 3), strides=(2, 2), activation=activation)
+        x = layers.TimeDistributed(conv_2d_layer1, name="SWE_conv2d_1")(outputs)
+        pooling_layer1 = layers.MaxPooling2D()
+        outputs1 = layers.TimeDistributed(pooling_layer1, name=f"SWE_max_pooling_1")(x)
+
+        return inputs, outputs1
+
+    @staticmethod
+    def dem_cnn(observation_period: int, activation: str = "relu"):
+        inputs = keras.Input(shape=(observation_period, None, None, 1), batch_size=None, name="DEM_inputs")
+
+        # First convolutional layer:
+        conv_2d_layer = layers.Conv2D(
+            filters=1, kernel_size=(5, 5), strides=(3, 3), activation=activation)
+        x = layers.TimeDistributed(conv_2d_layer, name="DEM_conv2d_0")(inputs)
+        pooling_layer = layers.MaxPooling2D()
+        outputs = layers.TimeDistributed(pooling_layer, name=f"DEM_max_pooling_0")(x)
+
+        # Second convolutional layer:
+        conv_2d_layer1 = layers.Conv2D(
+            filters=1, kernel_size=(4, 4), strides=(2, 2), activation=activation)
+        x = layers.TimeDistributed(conv_2d_layer1, name="DEM_conv2d_1")(outputs)
+        pooling_layer1 = layers.MaxPooling2D()
+        outputs1 = layers.TimeDistributed(pooling_layer1, name=f"DEM_max_pooling_1")(x)
+
+        # Third convolutional layer:
+        conv_2d_layer2 = layers.Conv2D(
+            filters=1, kernel_size=(3, 3), strides=(2, 2), activation=activation)
+        x = layers.TimeDistributed(conv_2d_layer2, name="DEM_conv2d_2")(outputs1)
+        pooling_layer2 = layers.MaxPooling2D()
+        outputs2 = layers.TimeDistributed(pooling_layer2, name=f"DEM_max_pooling_2")(x)
+
+        return inputs, outputs2
+
+    def get_model(self, kernal=(2, 2), strides=(1, 1),
+                  n_days_precip=7, n_days_temp=7,
+                  n_swe=12,
+                  enc_embed_dim=16, enc_dense_dim=32, enc_num_heads=2,
+                  dec_embed_dim=16, dec_dense_dim=32, dec_num_heads=2,
+                  n_y=14, hidden_dim=16, dropout=0.5, cnn_activation="relu"):
+        """Create a new CNN model architecture with the specified parameters."""
+
+        # Create the max-pooling layers first:
+        maxpool_dem_inputs, maxpool_dem_outputs = self.dem_cnn(
+            observation_period=1, activation=cnn_activation)
+        maxpool_et_inputs, maxpool_et_outputs = self.et_cnn(
+            observation_period=1, activation=cnn_activation)
+        maxpool_swe_inputs, maxpool_swe_outputs = self.swe_cnn(
+            observation_period=n_swe, activation=cnn_activation)
+
+        # Create the GAP CNNs:
+        gap_dem_inputs, gap_dem_outputs = time_dist_cnn(
+            1, "dem", hidden_dim, kernel_size=kernal, strides=strides, inputs=maxpool_dem_outputs)
+        gap_et_inputs, gap_et_outputs = time_dist_cnn(
+            1, "et", hidden_dim, kernel_size=kernal, strides=strides, inputs=maxpool_et_outputs)
+        gap_temp_inputs, gap_temp_outputs = time_dist_cnn(
+            n_days_temp, "temp", hidden_dim, kernel_size=kernal, strides=strides)
+        gap_precip_inputs, gap_precip_outputs = time_dist_cnn(
+            n_days_precip, "precip", hidden_dim, kernel_size=kernal, strides=strides)
+        gap_swe_inputs, gap_swe_outputs = time_dist_cnn(
+            n_swe, "swe", hidden_dim, kernel_size=kernal, strides=strides, inputs=maxpool_swe_outputs)
+
+        # Concatenate CNN outputs:
+        concat = tf.keras.layers.Concatenate(axis=1)(
+            [gap_dem_outputs, gap_temp_outputs, gap_precip_outputs, gap_swe_outputs, gap_et_outputs]
+        )
+
+        # Transformer encoder:
+        encoder_outputs = TransformerEncoder(embed_dim=enc_embed_dim, dense_dim=enc_dense_dim,  # NOQA
+                                             num_heads=enc_num_heads)(concat)
+
+        # Transformer decoder:
+        x = TransformerDecoder(embed_dim=dec_embed_dim, dense_dim=dec_dense_dim,  # NOQA
+                               num_heads=dec_num_heads)(concat, encoder_outputs)
+        x = layers.Dropout(dropout)(x)
+        x = layers.Flatten()(x)
+        decoder_outputs = layers.Dense(n_y, activation="linear")(x)
+
+        # Create the model:
+        transformer = keras.Model(
+            [maxpool_dem_inputs, gap_temp_inputs, gap_precip_inputs, maxpool_swe_inputs, maxpool_et_inputs],
+            decoder_outputs
+        )
         return transformer
