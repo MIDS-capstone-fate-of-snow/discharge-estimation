@@ -1,5 +1,5 @@
 """Code for training a CNN-based sequence model using raw satellite images."""
-
+import warnings
 from collections import defaultdict
 import datetime
 from itertools import product
@@ -272,8 +272,8 @@ class CNNSeqDataset:
         et_max = y_date
         et_min = y_date - datetime.timedelta(days=self.n_d_et)
         et_dates = self.modis_dates[(self.modis_dates >= et_min) & (self.modis_dates < et_max)]
-        # TODO: this is a hack to make sure ET only ever yields 1 image.
-        et_dates = et_dates.values[-1:]
+        n_et = self.n_d_et // 8
+        et_dates = et_dates.values[-n_et:]
         assert len(et_dates) == 1
         req_dates["et"] = et_dates
 
@@ -321,7 +321,13 @@ class CNNSeqDataset:
             arrays = list()
             for fp in fps[band]:
                 if self.file_formats[band] == "tif":
-                    tif = TifFile(fp)
+                    try:
+                        tif = TifFile(fp)
+                    except Exception as e:
+                        debug = fps['debug_data']
+                        debug["band"] = band
+                        warnings.warn(f"{debug} - error loading fp: {fp}")
+                        raise e
                     arr = tif.as_numpy_zero_nan
                 elif band == "swe":
                     arr = open_swe_file(fp)

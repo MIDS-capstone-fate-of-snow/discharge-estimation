@@ -25,16 +25,17 @@ class TifFile:
     def __init__(self, fp: str):
         self.fp = fp
         self.filename = os.path.basename(fp)
-        self.tif_data = rasterio.open(fp)
-        self.as_numpy = np.array(Image.open(self.fp))
+        with rasterio.open(fp) as f:
+            self.tif_data = f
+        with Image.open(self.fp) as f:
+            self.as_numpy = np.array(f)
         # Version of the array with all NaNs filled with zero:
         self.as_numpy_zero_nan = np.where(np.isnan(self.as_numpy), 0, self.as_numpy)
 
     def plot(self, ax=None):
         if ax is None:
             fig, ax = plt.subplots(figsize=(6, 6))
-        tif_data = rasterio.open(self.fp)
-        show(tif_data, with_bounds=True, ax=ax)
+        show(self.tif_data, with_bounds=True, ax=ax)
 
     @property
     def gage(self):
