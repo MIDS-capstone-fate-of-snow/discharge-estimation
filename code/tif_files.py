@@ -1,6 +1,7 @@
 
 import os
 from PIL import Image  # NOQA
+import re
 
 import folium
 import geopandas as gpd
@@ -23,6 +24,7 @@ class TifFile:
 
     def __init__(self, fp: str):
         self.fp = fp
+        self.filename = os.path.basename(fp)
         self.tif_data = rasterio.open(fp)
         self.as_numpy = np.array(Image.open(self.fp))
         # Version of the array with all NaNs filled with zero:
@@ -33,6 +35,27 @@ class TifFile:
             fig, ax = plt.subplots(figsize=(6, 6))
         tif_data = rasterio.open(self.fp)
         show(tif_data, with_bounds=True, ax=ax)
+
+    @property
+    def gage(self):
+        """Returns 8-digit gage number if found in filename, else None."""
+        streamgage = list(set(re.findall("\d{8}", self.filename)))
+        if len(streamgage) == 1:
+            return str(streamgage[0])
+        else:
+            return None
+
+    @property
+    def band(self):
+        """Returns band name if found in filename, else None."""
+        found = list()
+        for band in ("et", "precip", "temp", "swe", "dem"):
+            if band in self.filename.lower():
+                found.append(band)
+        if len(found) == 1:
+            return found[0]
+        else:
+            return None
 
     @property
     def shape(self):
