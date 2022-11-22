@@ -150,9 +150,7 @@ class GAPModelExperiment:
 
             # Print debug info:
             if debug:
-                date = sample["debug_data"][0].strftime("%Y_%m_%d")
-                gage = sample["debug_data"][1]
-                print(f"Sample {i} ({date}, {gage})")
+                print(f"Sample {i}, {sample['debug_data']}")
 
             # Yield data in format required by tensorflow:
             X = [sample[f] for f in self.features]
@@ -177,9 +175,7 @@ class GAPModelExperiment:
 
             # Print debug info:
             if debug:
-                date = sample["debug_data"][0].strftime("%Y_%m_%d")
-                gage = sample["debug_data"][1]
-                print(f"Sample {i} ({date}, {gage})")
+                print(f"Sample {i}, {sample['debug_data']}")
 
             # Yield data in format required by tensorflow:
             X = [sample[f] for f in self.features]
@@ -204,9 +200,7 @@ class GAPModelExperiment:
 
             # Print debug info:
             if debug:
-                date = sample["debug_data"][0].strftime("%Y_%m_%d")
-                gage = sample["debug_data"][1]
-                print(f"Sample {i} ({date}, {gage})")
+                print(f"Sample {i}, {sample['debug_data']}")
 
             # Yield data in format required by tensorflow:
             X = [sample[f] for f in self.features]

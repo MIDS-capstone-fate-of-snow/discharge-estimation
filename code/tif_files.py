@@ -8,7 +8,6 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
-from rasterio.plot import show
 
 DIR, FILENAME = os.path.split(__file__)
 DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
@@ -25,22 +24,25 @@ class TifFile:
     def __init__(self, fp: str):
         self.fp = fp
         self.filename = os.path.basename(fp)
-        with rasterio.open(fp) as f:
-            self.tif_data = f
-        with Image.open(self.fp) as f:
-            self.as_numpy = np.array(f)
+        with rasterio.open(fp) as tif_data:
+            self.bounds = tif_data.bounds
+            self.crs = tif_data.crs["init"]
+
+        with open(self.fp, "rb") as f:
+            with Image.open(f) as f1:
+                self.as_numpy = np.array(f1)
         # Version of the array with all NaNs filled with zero:
         self.as_numpy_zero_nan = np.where(np.isnan(self.as_numpy), 0, self.as_numpy)
 
     def plot(self, ax=None):
         if ax is None:
             fig, ax = plt.subplots(figsize=(6, 6))
-        show(self.tif_data, with_bounds=True, ax=ax)
+        ax.imshow(self.as_numpy)
 
     @property
     def gage(self):
         """Returns 8-digit gage number if found in filename, else None."""
-        streamgage = list(set(re.findall("\d{8}", self.filename)))
+        streamgage = list(set(re.findall("\d{8}", self.filename)))  # NOQA
         if len(streamgage) == 1:
             return str(streamgage[0])
         else:
@@ -117,7 +119,7 @@ class TifFile:
     @property
     def pixel_min(self):
         """Min of all pixel values."""
-        return self.as_numpy.min()
+        return self.as_numpy.min()  # NOQA
 
     @property
     def pixel_nanmin(self):
@@ -127,7 +129,7 @@ class TifFile:
     @property
     def pixel_max(self):
         """Max of all pixel values."""
-        return self.as_numpy.max()
+        return self.as_numpy.max()  # NOQA
 
     @property
     def pixel_nanmax(self):
@@ -135,34 +137,24 @@ class TifFile:
         return np.nanmax(self.as_numpy)
 
     @property
-    def crs(self):
-        """Coordinate reference system."""
-        return self.tif_data.crs["init"]
-
-    @property
-    def bounds(self):
-        """Image lat-lon bounds."""
-        return self.tif_data.bounds
-
-    @property
     def min_lon(self):
         """Image minimum lon."""
-        return self.tif_data.bounds[0]
+        return self.bounds[0]
 
     @property
     def min_lat(self):
         """Image minimum lat."""
-        return self.tif_data.bounds[1]
+        return self.bounds[1]
 
     @property
     def max_lon(self):
         """Image maximum lon."""
-        return self.tif_data.bounds[2]
+        return self.bounds[2]
 
     @property
     def max_lat(self):
         """Image maximum lat."""
-        return self.tif_data.bounds[3]
+        return self.bounds[3]
 
     def plot_pixel_grid(self, my_map: folium.folium.Map = None,
                         color: str = "blue", weight: int = 1,
