@@ -126,8 +126,8 @@ class ExperimentAnalysis:
             rmse[f"rmse_{day}day"] = score
             all_actual += list(actual)
             all_pred += list(predicted)
-        rmse["avg"] = np.mean(list(rmse.values()))
-        rmse["total"] = mean_squared_error(all_actual, all_pred, squared=False)
+        rmse["rmse_avg"] = np.mean(list(rmse.values()))
+        rmse["rmse_total"] = mean_squared_error(all_actual, all_pred, squared=False)
         return rmse
 
     def compute_rmse_results(self):
