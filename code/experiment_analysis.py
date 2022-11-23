@@ -116,13 +116,18 @@ class ExperimentAnalysis:
         """Compute RMSE results for a single experiment."""
         cols = [c for c in merged_df.columns if "y_day_" in c and "_aligned" in c]
         rmse = dict()
+        all_pred, all_actual = list(), list()
         for col in cols:
             day = int(col.replace("y_day_", "").replace("_aligned", ""))
             df = merged_df[["m3", col]].dropna(how="any")
-            actual = df["m3"]
-            predicted = df[col]
+            actual = df["m3"].values
+            predicted = df[col].values
             score = mean_squared_error(actual, predicted, squared=False)
             rmse[f"rmse_{day}day"] = score
+            all_actual += list(actual)
+            all_pred += list(predicted)
+        rmse["avg"] = np.mean(list(rmse.values()))
+        rmse["total"] = mean_squared_error(all_actual, all_pred, squared=False)
         return rmse
 
     def compute_rmse_results(self):
