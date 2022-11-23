@@ -142,7 +142,7 @@ class ExperimentAnalysis:
                 experiment_results.loc[experiment_id, col] = value
         experiment_results = experiment_results.reset_index()
         experiment_results = experiment_results.sort_values(by=["rmse_total"], ascending=True)
-        first = ["gages", "epochs", "hidden_dim", "enc_num_heads", "dec_num_heads",
+        first = ["id", "gages", "epochs", "hidden_dim", "enc_num_heads", "dec_num_heads",
                  "n_days_et", "n_days_precip", "n_days_temp", "n_days_y", "n_et", "n_swe"]
         order = first + [c for c in experiment_results.columns if c not in first]
         experiment_results = experiment_results[order]
