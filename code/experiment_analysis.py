@@ -140,7 +140,13 @@ class ExperimentAnalysis:
                 if col not in experiment_results.columns:
                     experiment_results[col] = np.nan
                 experiment_results.loc[experiment_id, col] = value
+        experiment_results = experiment_results.reset_index()
+        experiment_results = experiment_results.sort_values(by=["rmse_total"], ascending=True)
+        first = ["gages", "epochs", "hidden_dim", "enc_num_heads", "dec_num_heads",
+                 "n_days_et", "n_days_precip", "n_days_temp", "n_days_y", "n_et", "n_swe"]
+        order = first + [c for c in experiment_results.columns if c not in first]
+        experiment_results = experiment_results[order]
         results_fp = experiment_path("rmse_results.csv")
-        experiment_results.reset_index().to_csv(results_fp, encoding="utf-8", index=False)
+        experiment_results.to_csv(results_fp, encoding="utf-8", index=False)
         print(f"Results saved to:\n  {results_fp}")
         return experiment_results
