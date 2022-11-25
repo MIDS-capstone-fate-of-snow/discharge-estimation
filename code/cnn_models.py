@@ -112,16 +112,21 @@ class TransformerDecoder(layers.Layer):
 def time_dist_cnn(observation_period: int, band_name: str,
                   n_filters: int = 16, kernel_size: tuple = (2, 2),
                   strides: tuple = (1, 1), activation: str = "relu",
-                  inputs=None):
-    """Create time-distributed CNN with GAP."""
+                  inputs=None, pooling: str = "avg"):
+    """Create time-distributed CNN with Global Pooling layer."""
     if inputs is None:
         inputs = keras.Input(shape=(observation_period, None, None, 1),
                              batch_size=None, name=f"{band_name}_inputs")
     conv_2d_layer = layers.Conv2D(filters=n_filters, kernel_size=kernel_size,
                                   strides=strides, activation=activation)
     x = layers.TimeDistributed(conv_2d_layer, name=f"{band_name}_conv2d")(inputs)
-    pooling_layer = layers.GlobalAveragePooling2D(data_format="channels_last", keepdims=False)
-    outputs = layers.TimeDistributed(pooling_layer, name=f"{band_name}_global_pooling")(x)
+    if pooling == "avg":
+        pooling_layer = layers.GlobalAveragePooling2D(data_format="channels_last", keepdims=False)
+    elif pooling == "max":
+        pooling_layer = layers.GlobalMaxPooling2D(data_format="channels_last", keepdims=False)
+    else:
+        raise ValueError(f"Invalid `pooling` arg: {pooling}")
+    outputs = layers.TimeDistributed(pooling_layer, name=f"{band_name}_global_{pooling}_pooling")(x)
     return inputs, outputs
 
 
@@ -141,21 +146,21 @@ class GAPTransArchitecture:
                   n_swe=12, n_et=1,
                   enc_embed_dim=16, enc_dense_dim=32, enc_num_heads=2,
                   dec_embed_dim=16, dec_dense_dim=32, dec_num_heads=2,
-                  n_y=14, hidden_dim=16, dropout=0.5):
+                  n_y=14, hidden_dim=16, dropout=0.5, pooling: str = "avg"):
         """Create a new CNN model architecture with the specified parameters."""
-        # Single image CNN inputs - dem / et:
+        # Single image CNN inputs - dem:
         dem_inputs, dem_outputs = time_dist_cnn(
-            1, "dem", hidden_dim, kernel_size=dem_kernal, strides=dem_strides)
-        et_inputs, et_outputs = time_dist_cnn(
-            n_et, "et", hidden_dim, kernel_size=et_kernal, strides=et_strides)
+            1, "dem", hidden_dim, kernel_size=dem_kernal, strides=dem_strides, pooling=pooling)
 
-        # Multiple image CNN inputs - temp / precip / swe:
+        # Multiple image CNN inputs - temp / precip / swe / et:
+        et_inputs, et_outputs = time_dist_cnn(
+            n_et, "et", hidden_dim, kernel_size=et_kernal, strides=et_strides, pooling=pooling)
         temp_inputs, temp_outputs = time_dist_cnn(
-            n_days_temp, "temp", hidden_dim, kernel_size=temp_kernal, strides=temp_strides)
+            n_days_temp, "temp", hidden_dim, kernel_size=temp_kernal, strides=temp_strides, pooling=pooling)
         precip_inputs, precip_outputs = time_dist_cnn(
-            n_days_precip, "precip", hidden_dim, kernel_size=precip_kernal, strides=precip_strides)
+            n_days_precip, "precip", hidden_dim, kernel_size=precip_kernal, strides=precip_strides, pooling=pooling)
         swe_inputs, swe_outputs = time_dist_cnn(
-            n_swe, "swe", hidden_dim, kernel_size=swe_kernal, strides=swe_strides)
+            n_swe, "swe", hidden_dim, kernel_size=swe_kernal, strides=swe_strides, pooling=pooling)
 
         # Concatenate CNN outputs:
         concat = tf.keras.layers.Concatenate(axis=1)(
@@ -257,7 +262,8 @@ class GAPTransMaxArchitecture:
                   n_swe=12,
                   enc_embed_dim=16, enc_dense_dim=32, enc_num_heads=2,
                   dec_embed_dim=16, dec_dense_dim=32, dec_num_heads=2,
-                  n_y=14, hidden_dim=16, dropout=0.5, cnn_activation="relu"):
+                  n_y=14, hidden_dim=16, dropout=0.5, cnn_activation="relu",
+                  pooling: str = "avg"):
         """Create a new CNN model architecture with the specified parameters."""
 
         # Create the max-pooling layers first:
@@ -270,15 +276,15 @@ class GAPTransMaxArchitecture:
 
         # Create the GAP CNNs:
         gap_dem_inputs, gap_dem_outputs = time_dist_cnn(
-            1, "dem", hidden_dim, kernel_size=kernal, strides=strides, inputs=maxpool_dem_outputs)
+            1, "dem", hidden_dim, kernel_size=kernal, strides=strides, inputs=maxpool_dem_outputs, pooling=pooling)
         gap_et_inputs, gap_et_outputs = time_dist_cnn(
-            1, "et", hidden_dim, kernel_size=kernal, strides=strides, inputs=maxpool_et_outputs)
+            1, "et", hidden_dim, kernel_size=kernal, strides=strides, inputs=maxpool_et_outputs, pooling=pooling)
         gap_temp_inputs, gap_temp_outputs = time_dist_cnn(
-            n_days_temp, "temp", hidden_dim, kernel_size=kernal, strides=strides)
+            n_days_temp, "temp", hidden_dim, kernel_size=kernal, strides=strides, pooling=pooling)
         gap_precip_inputs, gap_precip_outputs = time_dist_cnn(
-            n_days_precip, "precip", hidden_dim, kernel_size=kernal, strides=strides)
+            n_days_precip, "precip", hidden_dim, kernel_size=kernal, strides=strides, pooling=pooling)
         gap_swe_inputs, gap_swe_outputs = time_dist_cnn(
-            n_swe, "swe", hidden_dim, kernel_size=kernal, strides=strides, inputs=maxpool_swe_outputs)
+            n_swe, "swe", hidden_dim, kernel_size=kernal, strides=strides, inputs=maxpool_swe_outputs, pooling=pooling)
 
         # Concatenate CNN outputs:
         concat = tf.keras.layers.Concatenate(axis=1)(
