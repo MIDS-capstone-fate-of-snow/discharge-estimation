@@ -1,10 +1,11 @@
 """Code for training a CNN-based sequence model using raw satellite images."""
-import warnings
+
 from collections import defaultdict
 import datetime
 from itertools import product
 import os
 import random
+import warnings
 import yaml
 
 import numpy as np
@@ -33,6 +34,7 @@ class CNNSeqDataset:
                  n_d_et: int = 8,
                  swe_d_rel: list = range(7, 85, 7),
                  n_d_y: int = 14,
+                 y_seq: bool = True,
                  min_date: str = "2010_01_01",
                  max_date: str = "2016_12_31",
                  val_start: str = "2015_01_01",
@@ -56,6 +58,8 @@ class CNNSeqDataset:
                 only every 8 days, must be at least 8).
             swe_d_rel: specific days back in the past to select SWE images from.
             n_d_y: number of days forward to predict y measurements for.
+            y_seq: whether or not y should be a sequence of all days up to
+                `n_d_y`, or just a single day's measurement at `n_d_y`.
             min_date: global minimum training dataset date.
             max_date: global maximum training dataset date.
             val_start: date cutoff to start the validation set at.
@@ -69,6 +73,7 @@ class CNNSeqDataset:
         self.n_d_et = n_d_et
         self.swe_d_rel = list(swe_d_rel)
         self.n_d_y = n_d_y
+        self.y_seq = y_seq
 
         self.min_date = convert_datetime(min_date)
         self.max_date = convert_datetime(max_date)
@@ -260,7 +265,10 @@ class CNNSeqDataset:
         req_dates = dict()
 
         # Outcome variable dates:
-        req_dates["y"] = pd.date_range(y_date, y_date + datetime.timedelta(days=self.n_d_y - 1))
+        if self.y_seq:  # y is a sequence of observations.
+            req_dates["y"] = pd.date_range(y_date, y_date + datetime.timedelta(days=self.n_d_y - 1))
+        else:  # y is a single observation.
+            req_dates["y"] = [y_date + datetime.timedelta(days=self.n_d_y - 1)]
 
         # Daily temperature, precipitation dates:
         req_dates["temp"] = pd.date_range(y_date - datetime.timedelta(days=self.n_d_temp),
@@ -274,7 +282,6 @@ class CNNSeqDataset:
         et_dates = self.modis_dates[(self.modis_dates >= et_min) & (self.modis_dates < et_max)]
         n_et = self.n_d_et // 8
         et_dates = et_dates.values[-n_et:]
-        # assert len(et_dates) == 1
         req_dates["et"] = et_dates
 
         # SWE dates:
