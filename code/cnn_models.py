@@ -119,7 +119,7 @@ def time_dist_cnn(observation_period: int, band_name: str,
                              batch_size=None, name=f"{band_name}_inputs")
     conv_2d_layer = layers.Conv2D(filters=n_filters, kernel_size=kernel_size,
                                   strides=strides, activation=activation)
-    x = layers.TimeDistributed(conv_2d_layer, name=f"{band_name}_conv2d")(inputs)
+    x = layers.TimeDistributed(conv_2d_layer, name=f"{band_name}_time_dist_conv2d")(inputs)
     if pooling == "avg":
         pooling_layer = layers.GlobalAveragePooling2D(data_format="channels_last", keepdims=False)
     elif pooling == "max":
@@ -259,7 +259,7 @@ class GAPTransMaxArchitecture:
 
     def get_model(self, kernal=(2, 2), strides=(1, 1),
                   n_days_precip=7, n_days_temp=7,
-                  n_swe=12,
+                  n_swe=12, n_et=1,
                   enc_embed_dim=16, enc_dense_dim=32, enc_num_heads=2,
                   dec_embed_dim=16, dec_dense_dim=32, dec_num_heads=2,
                   n_y=14, hidden_dim=16, dropout=0.5, cnn_activation="relu",
@@ -270,7 +270,7 @@ class GAPTransMaxArchitecture:
         maxpool_dem_inputs, maxpool_dem_outputs = self.dem_cnn(
             observation_period=1, activation=cnn_activation)
         maxpool_et_inputs, maxpool_et_outputs = self.et_cnn(
-            observation_period=1, activation=cnn_activation)
+            observation_period=n_et, activation=cnn_activation)
         maxpool_swe_inputs, maxpool_swe_outputs = self.swe_cnn(
             observation_period=n_swe, activation=cnn_activation)
 
@@ -278,7 +278,7 @@ class GAPTransMaxArchitecture:
         gap_dem_inputs, gap_dem_outputs = time_dist_cnn(
             1, "dem", hidden_dim, kernel_size=kernal, strides=strides, inputs=maxpool_dem_outputs, pooling=pooling)
         gap_et_inputs, gap_et_outputs = time_dist_cnn(
-            1, "et", hidden_dim, kernel_size=kernal, strides=strides, inputs=maxpool_et_outputs, pooling=pooling)
+            n_et, "et", hidden_dim, kernel_size=kernal, strides=strides, inputs=maxpool_et_outputs, pooling=pooling)
         gap_temp_inputs, gap_temp_outputs = time_dist_cnn(
             n_days_temp, "temp", hidden_dim, kernel_size=kernal, strides=strides, pooling=pooling)
         gap_precip_inputs, gap_precip_outputs = time_dist_cnn(
@@ -305,6 +305,80 @@ class GAPTransMaxArchitecture:
         # Create the model:
         transformer = keras.Model(
             [maxpool_dem_inputs, gap_temp_inputs, gap_precip_inputs, maxpool_swe_inputs, maxpool_et_inputs],
+            decoder_outputs
+        )
+        return transformer
+
+
+class ConvResizeGAPTransArchitecture:
+    """CNN architecture using Global Average Pooling and Transformer, plus
+    simple convolutional layer to resize larger images to same dimensions."""
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def get_model(kernal=(2, 2), strides=(1, 1),
+                  n_days_precip=7, n_days_temp=7,
+                  n_swe=12, n_et=1,
+                  enc_embed_dim=16, enc_dense_dim=32, enc_num_heads=2,
+                  dec_embed_dim=16, dec_dense_dim=32, dec_num_heads=2,
+                  n_y=14, hidden_dim=16, dropout=0.5, cnn_activation="relu",
+                  pooling: str = "avg"):
+        """Create a new CNN model architecture with the specified parameters."""
+
+        # ET resizer:
+        et_ksize = (9, 9)
+        et_raw_inputs = keras.Input(shape=(n_et, None, None, 1), batch_size=None, name="et_inputs")
+        et_conv_2d_layer = layers.Conv2D(
+            filters=1, kernel_size=et_ksize, strides=et_ksize, activation=cnn_activation)
+        et_resized_inputs = layers.TimeDistributed(et_conv_2d_layer, name="et_conv2d")(et_raw_inputs)
+
+        # SWE resizer:
+        swe_ksize = (35, 35)
+        swe_raw_inputs = keras.Input(shape=(n_swe, None, None, 1), batch_size=None, name="swe_inputs")
+        swe_conv_2d_layer = layers.Conv2D(
+            filters=1, kernel_size=swe_ksize, strides=swe_ksize, activation=cnn_activation)
+        swe_resized_inputs = layers.TimeDistributed(swe_conv_2d_layer, name="swe_conv2d")(swe_raw_inputs)
+
+        # DEM resizer:
+        dem_ksize = (138, 138)
+        dem_raw_inputs = keras.Input(shape=(1, None, None, 1), batch_size=None, name="dem_inputs")
+        dem_conv_2d_layer = layers.Conv2D(
+            filters=1, kernel_size=dem_ksize, strides=dem_ksize, activation=cnn_activation)
+        dem_resized_inputs = layers.TimeDistributed(dem_conv_2d_layer, name="dem_conv2d")(dem_raw_inputs)
+
+        # Create the GAP CNNs:
+        gap_dem_inputs, gap_dem_outputs = time_dist_cnn(
+            1, "dem", hidden_dim, kernel_size=kernal, strides=strides, inputs=dem_resized_inputs, pooling=pooling)
+        gap_et_inputs, gap_et_outputs = time_dist_cnn(
+            1, "et", hidden_dim, kernel_size=kernal, strides=strides, inputs=et_resized_inputs, pooling=pooling)
+        gap_temp_inputs, gap_temp_outputs = time_dist_cnn(
+            n_days_temp, "temp", hidden_dim, kernel_size=kernal, strides=strides, pooling=pooling)
+        gap_precip_inputs, gap_precip_outputs = time_dist_cnn(
+            n_days_precip, "precip", hidden_dim, kernel_size=kernal, strides=strides, pooling=pooling)
+        gap_swe_inputs, gap_swe_outputs = time_dist_cnn(
+            n_swe, "swe", hidden_dim, kernel_size=kernal, strides=strides, inputs=swe_resized_inputs, pooling=pooling)
+
+        # Concatenate CNN outputs:
+        concat = tf.keras.layers.Concatenate(axis=1)(
+            [gap_dem_outputs, gap_temp_outputs, gap_precip_outputs, gap_swe_outputs, gap_et_outputs]
+        )
+
+        # Transformer encoder:
+        encoder_outputs = TransformerEncoder(embed_dim=enc_embed_dim, dense_dim=enc_dense_dim,  # NOQA
+                                             num_heads=enc_num_heads)(concat)
+
+        # Transformer decoder:
+        x = TransformerDecoder(embed_dim=dec_embed_dim, dense_dim=dec_dense_dim,  # NOQA
+                               num_heads=dec_num_heads)(concat, encoder_outputs)
+        x = layers.Dropout(dropout)(x)
+        x = layers.Flatten()(x)
+        decoder_outputs = layers.Dense(n_y, activation="linear")(x)
+
+        # Create the model:
+        transformer = keras.Model(
+            [dem_raw_inputs, gap_temp_inputs, gap_precip_inputs, swe_raw_inputs, et_raw_inputs],
             decoder_outputs
         )
         return transformer
