@@ -274,7 +274,7 @@ class CNNSeqDataset:
         et_dates = self.modis_dates[(self.modis_dates >= et_min) & (self.modis_dates < et_max)]
         n_et = self.n_d_et // 8
         et_dates = et_dates.values[-n_et:]
-        assert len(et_dates) == 1
+        # assert len(et_dates) == 1
         req_dates["et"] = et_dates
 
         # SWE dates:

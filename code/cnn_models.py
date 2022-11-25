@@ -138,7 +138,7 @@ class GAPTransArchitecture:
                   precip_kernal=(2, 2), precip_strides=(1, 1),
                   swe_kernal=(5, 5), swe_strides=(1, 1),
                   n_days_precip=7, n_days_temp=7,
-                  n_swe=12,
+                  n_swe=12, n_et=1,
                   enc_embed_dim=16, enc_dense_dim=32, enc_num_heads=2,
                   dec_embed_dim=16, dec_dense_dim=32, dec_num_heads=2,
                   n_y=14, hidden_dim=16, dropout=0.5):
@@ -147,7 +147,7 @@ class GAPTransArchitecture:
         dem_inputs, dem_outputs = time_dist_cnn(
             1, "dem", hidden_dim, kernel_size=dem_kernal, strides=dem_strides)
         et_inputs, et_outputs = time_dist_cnn(
-            1, "et", hidden_dim, kernel_size=et_kernal, strides=et_strides)
+            n_et, "et", hidden_dim, kernel_size=et_kernal, strides=et_strides)
 
         # Multiple image CNN inputs - temp / precip / swe:
         temp_inputs, temp_outputs = time_dist_cnn(
