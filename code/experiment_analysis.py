@@ -34,7 +34,8 @@ class ExperimentAnalysis:
         experiment_names = list()
         for name in experiment_list:
             fp = experiment_path(name)
-            if os.path.isdir(fp) and ("__trained_model" not in name) and ("." not in name):
+            if os.path.isdir(fp) and ("__trained_model" not in name) and ("__ckpts" not in name) and \
+                    ("." not in name):
                 experiment_dirs.append(fp)
                 experiment_names.append(name)
         self.experiment_names = experiment_names
@@ -150,3 +151,18 @@ class ExperimentAnalysis:
         experiment_results.to_csv(results_fp, encoding="utf-8", index=False)
         print(f"Results saved to:\n  {results_fp}")
         return experiment_results
+
+    def cleanup_bad_experiments(self):
+        bad_experiments = set(self.experiment_names) - set(self.experiments.index)
+        contains_files = list()
+        for exp in bad_experiments:
+            exp_dir = os.path.join(EXPERIMENT_DIR, exp)
+            contents = os.listdir(exp_dir)
+            if not len(contents):
+                os.rmdir(exp_dir)
+            else:
+                contains_files.append(exp)
+        if len(contains_files):
+            print(f"{len(contains_files)} bad experiments contain some "
+                  f"files so not deleted:\n{sorted(contains_files)}")
+        return contains_files
