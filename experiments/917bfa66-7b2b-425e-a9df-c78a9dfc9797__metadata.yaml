@@ -1,0 +1,43 @@
+dec_dense_dim: '48'
+dec_embed_dim: '24'
+dec_num_heads: '4'
+dem_kernal: (5, 5)
+dem_strides: (1, 1)
+dropout: '0.5'
+enc_dense_dim: '48'
+enc_embed_dim: '24'
+enc_num_heads: '4'
+end_time: '2022_11_24__04_54_11'
+epochs: '2'
+et_kernal: (4, 4)
+et_strides: (1, 1)
+gages: '[''11402000'', ''11189500'']'
+hidden_dim: '24'
+id: 917bfa66-7b2b-425e-a9df-c78a9dfc9797
+learning_rate: '0.0001'
+loss: mean_squared_error
+n_days_et: '8'
+n_days_precip: '1'
+n_days_temp: '28'
+n_days_y: '14'
+n_et: '1'
+n_swe: '12'
+opt: <class 'keras.optimizers.optimizer_experimental.adam.Adam'>
+precip_kernal: (2, 2)
+precip_strides: (1, 1)
+shuffle_train: 'True'
+start_time: '2022_11_24__04_18_02'
+swe_days_relative: '[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84]'
+swe_kernal: (5, 5)
+swe_strides: (1, 1)
+temp_kernal: (2, 2)
+temp_strides: (1, 1)
+test_pred_end_time: '2022_11_24__04_54_04'
+test_pred_start_time: '2022_11_24__04_52_05'
+tf_board_update_freq: '100'
+train_end_time: '2022_11_24__04_50_02'
+train_start_time: '2022_11_24__04_18_05'
+use_masks: 'True'
+val_pred_end_time: '2022_11_24__04_52_05'
+val_pred_start_time: '2022_11_24__04_50_02'
+y_col: m3
