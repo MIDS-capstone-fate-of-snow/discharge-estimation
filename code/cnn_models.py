@@ -318,35 +318,33 @@ class ConvResizeGAPTransArchitecture:
         pass
 
     @staticmethod
-    def get_model(kernal=(2, 2), strides=(1, 1),
-                  n_days_precip=7, n_days_temp=7,
-                  n_swe=12, n_et=1,
+    def get_model(et_ksize=(9, 9), swe_ksize=(35, 35), dem_ksize=(138, 138),
+                  kernal=(2, 2), strides=(1, 1),
+                  n_days_precip=7, n_days_temp=7, n_swe=12, n_et=1,
                   enc_embed_dim=16, enc_dense_dim=32, enc_num_heads=2,
                   dec_embed_dim=16, dec_dense_dim=32, dec_num_heads=2,
-                  n_y=14, hidden_dim=16, dropout=0.5, cnn_activation="relu",
+                  final_dense_dim=14, one_day_pred=False,
+                  hidden_dim=16, dropout=0.5, cnn_activation="relu",
                   pooling: str = "avg"):
         """Create a new CNN model architecture with the specified parameters."""
 
         # ET resizer:
-        et_ksize = (9, 9)
         et_raw_inputs = keras.Input(shape=(n_et, None, None, 1), batch_size=None, name="et_inputs")
         et_conv_2d_layer = layers.Conv2D(
             filters=1, kernel_size=et_ksize, strides=et_ksize, activation=cnn_activation)
-        et_resized_inputs = layers.TimeDistributed(et_conv_2d_layer, name="et_conv2d")(et_raw_inputs)
+        et_resized_inputs = layers.TimeDistributed(et_conv_2d_layer, name="et_resizer")(et_raw_inputs)
 
         # SWE resizer:
-        swe_ksize = (35, 35)
         swe_raw_inputs = keras.Input(shape=(n_swe, None, None, 1), batch_size=None, name="swe_inputs")
         swe_conv_2d_layer = layers.Conv2D(
             filters=1, kernel_size=swe_ksize, strides=swe_ksize, activation=cnn_activation)
-        swe_resized_inputs = layers.TimeDistributed(swe_conv_2d_layer, name="swe_conv2d")(swe_raw_inputs)
+        swe_resized_inputs = layers.TimeDistributed(swe_conv_2d_layer, name="swe_resizer")(swe_raw_inputs)
 
         # DEM resizer:
-        dem_ksize = (138, 138)
         dem_raw_inputs = keras.Input(shape=(1, None, None, 1), batch_size=None, name="dem_inputs")
         dem_conv_2d_layer = layers.Conv2D(
             filters=1, kernel_size=dem_ksize, strides=dem_ksize, activation=cnn_activation)
-        dem_resized_inputs = layers.TimeDistributed(dem_conv_2d_layer, name="dem_conv2d")(dem_raw_inputs)
+        dem_resized_inputs = layers.TimeDistributed(dem_conv_2d_layer, name="dem_resizer")(dem_raw_inputs)
 
         # Create the GAP CNNs:
         gap_dem_inputs, gap_dem_outputs = time_dist_cnn(
@@ -374,11 +372,17 @@ class ConvResizeGAPTransArchitecture:
                                num_heads=dec_num_heads)(concat, encoder_outputs)
         x = layers.Dropout(dropout)(x)
         x = layers.Flatten()(x)
-        decoder_outputs = layers.Dense(n_y, activation="linear")(x)
+
+        # Final prediction layer(s):
+        assert (final_dense_dim is not None) or one_day_pred
+        if final_dense_dim is not None:
+            x = layers.Dense(final_dense_dim, activation="linear")(x)
+        if one_day_pred:
+            x = layers.Dense(1, activation="linear")(x)
 
         # Create the model:
         transformer = keras.Model(
             [dem_raw_inputs, gap_temp_inputs, gap_precip_inputs, swe_raw_inputs, et_raw_inputs],
-            decoder_outputs
+            x
         )
         return transformer
