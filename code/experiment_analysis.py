@@ -100,6 +100,8 @@ class ExperimentAnalysis:
         """Plot predicted discharge values against true values."""
         n_rows = len(days)
         fig, axes = plt.subplots(n_rows, 1, figsize=(8, n_rows*4), dpi=200)
+        if n_rows == 1:  # So the rest of the function is compatible with type.
+            axes = np.array(axes)
         plot_df = merged_df.reset_index().copy()
         plot_df = plot_df[plot_df["gage"] == gage].sort_values(by=["date"])
         for day, ax in zip(days, axes.flatten()):
