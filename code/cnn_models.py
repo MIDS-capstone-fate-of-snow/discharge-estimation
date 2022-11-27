@@ -1,8 +1,14 @@
 """CNN model architectures."""
 
+import os
+
 from tensorflow import keras
 import tensorflow as tf
 from tensorflow.keras import datasets, layers, models  # NOQA
+import yaml
+
+DIR, FILENAME = os.path.split(__file__)
+DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
 
 
 class TransformerEncoder(layers.Layer):
@@ -112,21 +118,27 @@ class TransformerDecoder(layers.Layer):
 def time_dist_cnn(observation_period: int, band_name: str,
                   n_filters: int = 16, kernel_size: tuple = (2, 2),
                   strides: tuple = (1, 1), activation: str = "relu",
-                  inputs=None, pooling: str = "avg"):
+                  inputs=None, pooling: str = "avg",
+                  w: int = None, h: int = None):
     """Create time-distributed CNN with Global Pooling layer."""
     if inputs is None:
-        inputs = keras.Input(shape=(observation_period, None, None, 1),
+        inputs = keras.Input(shape=(observation_period, w, h, 1),
                              batch_size=None, name=f"{band_name}_inputs")
     conv_2d_layer = layers.Conv2D(filters=n_filters, kernel_size=kernel_size,
                                   strides=strides, activation=activation)
     x = layers.TimeDistributed(conv_2d_layer, name=f"{band_name}_time_dist_conv2d")(inputs)
     if pooling == "avg":
         pooling_layer = layers.GlobalAveragePooling2D(data_format="channels_last", keepdims=False)
+        name = f"global_{pooling}_pooling"
     elif pooling == "max":
         pooling_layer = layers.GlobalMaxPooling2D(data_format="channels_last", keepdims=False)
+        name = f"global_{pooling}_pooling"
+    elif pooling == "flatten":
+        pooling_layer = layers.Flatten()
+        name = "flatten"
     else:
         raise ValueError(f"Invalid `pooling` arg: {pooling}")
-    outputs = layers.TimeDistributed(pooling_layer, name=f"{band_name}_global_{pooling}_pooling")(x)
+    outputs = layers.TimeDistributed(pooling_layer, name=f"{band_name}_{name}")(x)
     return inputs, outputs
 
 
@@ -385,4 +397,102 @@ class ConvResizeGAPTransArchitecture:
             [dem_raw_inputs, gap_temp_inputs, gap_precip_inputs, swe_raw_inputs, et_raw_inputs],
             x
         )
+        return transformer
+
+
+def get_kernal_stride(input_sizes: dict):
+    """Use temp/precip size with kernal size (2, 2), stride (1, 1) to
+    determine sizes of other bands.
+
+    Args:
+        input_sizes: dict of band name to tuple of pixel w/h dimensions.
+    """
+
+    w, h = input_sizes["precip"]
+    assert input_sizes["temp"] == [w, h]
+    w_kernal_ratio = 2 / w
+    h_kernal_ratio = 2 / h
+    w_stride_ratio = 1 / w
+    h_stride_ratio = 1 / h
+
+    kernal_stride = {k: {"kernal": (2, 2), "stride": (1, 1)} for k in ("precip", "temp")}
+    for k in ("dem", "et", "swe"):
+        w, h = input_sizes[k]
+        kernal_w = int(w * w_kernal_ratio)
+        kernal_h = int(h * h_kernal_ratio)
+        stride_w = int(w * w_stride_ratio)
+        stride_h = int(h * h_stride_ratio)
+        kernal_stride[k] = {"kernal": (kernal_w, kernal_h), "stride": (stride_w, stride_h)}
+
+    return kernal_stride
+
+
+class ImgSizeCNN:
+
+    def __init__(self):
+        # Get the sizes of the images for each streamgage:
+        with open(os.path.join(DATA_DIR, "gage_img_sizes.yaml"), "r") as f:
+            gage_sizes = yaml.safe_load(f)
+        with open(os.path.join(DATA_DIR, "avg_img_sizes.yaml"), "r") as f:
+            avg_sizes = yaml.safe_load(f)
+        for k, v in avg_sizes.items():
+            gage_sizes[k]["avg"] = v
+        self.img_sizes = gage_sizes
+
+    def get_model(self, gage: str, n_days_precip=7, n_days_temp=7, n_swe=12,
+                  n_et=1, enc_dense_dim=32, enc_num_heads=2, n_y=14,
+                  hidden_dim=8, dropout=0.5, pooling: str = "avg"):
+        """Create a new ImgSizeCNN model architecture with the specified
+        parameters."""
+        input_sizes = {k: v[gage] for k, v in self.img_sizes.items()}
+
+        kernal_stride = get_kernal_stride(input_sizes)
+
+        # Single image CNN inputs - dem:
+        dem_inputs, dem_outputs = time_dist_cnn(
+            1, "dem", hidden_dim,
+            kernel_size=kernal_stride["dem"]["kernal"], strides=kernal_stride["dem"]["stride"],
+            pooling=pooling, w=input_sizes["dem"][0], h=input_sizes["dem"][1],
+        )
+
+        # Multiple image CNN inputs - temp / precip / swe / et:
+        et_inputs, et_outputs = time_dist_cnn(
+            n_et, "et", hidden_dim,
+            kernel_size=kernal_stride["et"]["kernal"], strides=kernal_stride["et"]["stride"],
+            pooling=pooling, w=input_sizes["et"][0], h=input_sizes["et"][1],
+        )
+        temp_inputs, temp_outputs = time_dist_cnn(
+            n_days_temp, "temp", hidden_dim,
+            kernel_size=kernal_stride["temp"]["kernal"], strides=kernal_stride["temp"]["stride"],
+            pooling=pooling, w=input_sizes["temp"][0], h=input_sizes["temp"][1],
+        )
+        precip_inputs, precip_outputs = time_dist_cnn(
+            n_days_precip, "precip", hidden_dim,
+            kernel_size=kernal_stride["precip"]["kernal"], strides=kernal_stride["precip"]["stride"],
+            pooling=pooling, w=input_sizes["precip"][0], h=input_sizes["precip"][1],
+        )
+        swe_inputs, swe_outputs = time_dist_cnn(
+            n_swe, "swe", hidden_dim,
+            kernel_size=kernal_stride["swe"]["kernal"], strides=kernal_stride["swe"]["stride"],
+            pooling=pooling, w=input_sizes["swe"][0], h=input_sizes["swe"][1],
+        )
+
+        # Concatenate CNN outputs:
+        concat = tf.keras.layers.Concatenate(axis=1)(
+            [dem_outputs, temp_outputs, precip_outputs, swe_outputs, et_outputs]
+        )
+
+        # Transformer encoder:
+        encoder_outputs = TransformerEncoder(  # NOQA
+            embed_dim=concat.shape[-1], dense_dim=enc_dense_dim, num_heads=enc_num_heads)(concat)
+        x = layers.GlobalMaxPooling1D()(encoder_outputs)
+        x = layers.Dropout(dropout)(x)
+        outputs = layers.Dense(n_y, activation="linear")(x)
+
+        # Create the model:
+        transformer = keras.Model(
+            [dem_inputs, temp_inputs, precip_inputs, swe_inputs, et_inputs],
+            outputs
+        )
+
         return transformer
