@@ -419,3 +419,41 @@ def plot_masks(gage: str):
     fig.suptitle(f"Gage = {gage}")
 
     return fig
+
+
+def tif_to_npy(fp: str):
+    """Save data from a .tif file as a numpy.array with same name but .npy ext.
+
+    Args:
+        fp: path to .tif file
+    """
+    assert os.path.exists(fp)
+    assert fp.endswith(".tif")
+    tif = TifFile(fp)
+    arr = tif.as_numpy
+    assert isinstance(arr, np.ndarray)
+    basename = os.path.basename(fp)
+    new_basename = basename.replace(".tif", ".npy")
+    dir_name = os.path.dirname(fp)
+    new_fp = os.path.join(dir_name, new_basename)
+    np.save(new_fp, arr, allow_pickle=False, fix_imports=False)
+    return new_fp
+
+
+def convert_training_tif_files(train_dir: str):
+    """Convert all .tif files in the training directory to .npy files.
+
+    Args:
+        train_dir: path to training directory containing .tif files.
+
+    Returns:
+        list: list of new .npy filepaths.
+    """
+    np_files = list()
+    files = os.listdir(train_dir)
+    files = list(filter(lambda fn: fn.endswith(".tif"), files))
+    for f in files:
+        fp = os.path.join(train_dir, f)
+        np_fp = tif_to_npy(fp)
+        np_files.append(np_fp)
+    return np_files

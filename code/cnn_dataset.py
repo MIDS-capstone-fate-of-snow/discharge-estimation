@@ -107,9 +107,9 @@ class CNNSeqDataset:
 
         # File formats:
         self.file_formats = {
-            "precip": "tif",
-            "temp": "tif",
-            "et": "tif",
+            "precip": "npy",
+            "temp": "npy",
+            "et": "npy",
             "swe": "npy",
         }
 
@@ -328,19 +328,19 @@ class CNNSeqDataset:
             arrays = list()
             for fp in fps[band]:
                 if self.file_formats[band] == "tif":
-                    try:
-                        tif = TifFile(fp)
-                    except Exception as e:
-                        debug = fps['debug_data']
-                        debug["band"] = band
-                        warnings.warn(f"{debug} - error loading fp: {fp}")
-                        raise e
-                    arr = tif.as_numpy_zero_nan
+                    raise NotImplementedError()
+                    # try:
+                    #     tif = TifFile(fp)
+                    # except Exception as e:
+                    #     debug = fps['debug_data']
+                    #     debug["band"] = band
+                    #     warnings.warn(f"{debug} - error loading fp: {fp}")
+                    #     raise e
+                    # arr = tif.as_numpy_zero_nan
                 elif band == "swe":
                     arr = open_swe_file(fp)
                 elif self.file_formats[band] == "npy":
-                    raise NotImplementedError()
-                    # arr = open_npy_file(fp)
+                    arr = open_npy_file(fp)
                 else:
                     raise ValueError(f"Invalid band: {band}")
                 norm_arr = (arr - self.img_norm[band]["pixel_mean"]) / self.img_norm[band]["pixel_std"]
