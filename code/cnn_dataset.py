@@ -425,26 +425,35 @@ class CNNSeqDataset:
     def train_data_generator(self):
         for gage, y_date in self.train_pairs:
             fps = self.get_required_filepaths(y_date, gage)
-            try:
-                yield self.filepaths_to_data(fps)
-            except OSError:
-                print(f"OSError in train_data_generator: gage={gage}, y_date={y_date}")
-                continue
+            for retry_count in range(1, 11, 1):
+                try:
+                    yield self.filepaths_to_data(fps)
+                    break
+                except OSError:
+                    if retry_count == 10:
+                        warnings.warn(f"OSError in train_data_generator (tried 10 times): gage={gage}, y_date={y_date}")
+                    continue
 
     def val_data_generator(self):
         for gage, y_date in self.val_pairs:
             fps = self.get_required_filepaths(y_date, gage)
-            try:
-                yield self.filepaths_to_data(fps)
-            except OSError:
-                print(f"OSError in val_data_generator: gage={gage}, y_date={y_date}")
-                continue
+            for retry_count in range(1, 11, 1):
+                try:
+                    yield self.filepaths_to_data(fps)
+                    break
+                except OSError:
+                    if retry_count == 10:
+                        warnings.warn(f"OSError in train_data_generator (tried 10 times): gage={gage}, y_date={y_date}")
+                    continue
 
     def test_data_generator(self):
         for gage, y_date in self.test_pairs:
             fps = self.get_required_filepaths(y_date, gage)
-            try:
-                yield self.filepaths_to_data(fps)
-            except OSError:
-                print(f"OSError in test_data_generator: gage={gage}, y_date={y_date}")
-                continue
+            for retry_count in range(1, 11, 1):
+                try:
+                    yield self.filepaths_to_data(fps)
+                    break
+                except OSError:
+                    if retry_count == 10:
+                        warnings.warn(f"OSError in train_data_generator (tried 10 times): gage={gage}, y_date={y_date}")
+                    continue
