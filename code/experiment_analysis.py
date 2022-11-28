@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
+from tqdm import tqdm
 import yaml
 
 from utils import open_y_data
@@ -136,7 +137,7 @@ class ExperimentAnalysis:
     def compute_rmse_results(self):
         """Save a CSV of all experiment RMSE results."""
         experiment_results = self.experiments.copy()
-        for experiment_id in self.experiments.index:
+        for experiment_id in tqdm(self.experiments.index):
             merged = self.merge_pred_and_truth(experiment_id)
             rmse = self.compute_experiment_rmse(merged)
             for col, value in rmse.items():
@@ -154,6 +155,11 @@ class ExperimentAnalysis:
         print(f"Results saved to:\n  {results_fp}")
         return experiment_results
 
+    @property
+    def rmse_results(self):
+        results_fp = experiment_path("rmse_results.csv")
+        return pd.read_csv(results_fp, encoding="utf-8")
+
     def cleanup_bad_experiments(self):
         bad_experiments = set(self.experiment_names) - set(self.experiments.index)
         contains_files = list()
@@ -168,3 +174,60 @@ class ExperimentAnalysis:
             print(f"{len(contains_files)} bad experiments contain some "
                   f"files so not deleted:\n{sorted(contains_files)}")
         return contains_files
+
+    def get_validation_epoch_scores(self, *experiment_id: str):
+        df = self.experiments.loc[list(experiment_id)]
+        epoch_scores = list()
+        for exp_id, row in df.iterrows():
+            gages = row["gages"]
+            ckpt_dir = os.path.join(EXPERIMENT_DIR, f"{exp_id}__ckpts")
+            ckpts = sorted(filter(lambda s: s.endswith(".hdf5"), os.listdir(ckpt_dir)))
+            val_scores = list()
+            for ckpt in ckpts:
+                val_score = ckpt.split("-")[-1].replace(".hdf5", "")
+                try:
+                    score = float(val_score)
+                    val_scores.append(score)
+                except TypeError:
+                    break
+            if len(val_scores):
+                epoch_scores.append((gages, exp_id, val_scores, len(val_scores), val_scores[-1]))
+        df = pd.DataFrame(
+            epoch_scores, columns="gages experiment_id scores n_epoch final_score".split()
+        ).sort_values(by=["final_score"], ascending=True).reset_index(drop=True)
+        df["n_decline"] = df["scores"].map(self.decline_count)
+        return df
+
+    @staticmethod
+    def decline_count(scores: list):
+        """Count how many validation scores are declining in list of scores."""
+        count = 0
+        for i, s in enumerate(scores[1:], 1):
+            if s <= scores[i-1]:
+                count += 1
+        return count
+
+    @staticmethod
+    def plot_val_scores(val_scores: pd.DataFrame, min_epoch: int = 5,
+                        min_declining: int = 3):
+        """Plot the validation scores from `get_validation_epoch_scores` method.
+        """
+        subset = val_scores[(val_scores["n_decline"] >= min_declining) &
+                            (val_scores["n_epoch"] >= min_epoch)]
+        gages = subset["gages"].unique()
+        n_plots = len(gages)
+        fig, axes = plt.subplots(n_plots, figsize=(5, 4*n_plots))
+        if n_plots == 1:
+            axes = [axes]
+        for i, gage in enumerate(gages):
+            ax = axes[i]
+            gage_subset = subset[subset["gages"] == gage]
+            for ix, row in gage_subset.iterrows():
+                exp_id = row["experiment_id"]
+                final_score = row["final_score"]
+                scores = row["scores"]
+                ax.plot(range(len(scores)), scores, label=f"({final_score:.2f}) {exp_id}")
+                print(f"exp_id='{exp_id}', (final_score={final_score:.3f}")
+            ax.set_title(gage)
+            ax.legend(loc=(1.01, 0))
+        return fig
