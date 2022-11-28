@@ -1,0 +1,48 @@
+architecture: GAPTransArchitecture
+cnn_activation: relu
+dec_dense_dim: '48'
+dec_embed_dim: '24'
+dec_num_heads: '4'
+dem_kernal: (5, 5)
+dem_strides: (1, 1)
+dropout: '0.5'
+enc_dense_dim: '48'
+enc_embed_dim: '24'
+enc_num_heads: '4'
+end_time: '2022_11_25__13_57_46'
+epochs: '2'
+et_kernal: (4, 4)
+et_strides: (1, 1)
+gages: '[''11402000'', ''11189500'']'
+hidden_dim: '24'
+id: e2527ae7-cdc5-4e7f-8df0-b7fa3c3e2f31
+kernal: (2, 2)
+learning_rate: '0.0001'
+loss: mean_squared_error
+n_days_et: '8'
+n_days_precip: '14'
+n_days_temp: '7'
+n_days_y: '14'
+n_et: '1'
+n_swe: '12'
+opt: <class 'keras.optimizers.optimizer_experimental.adam.Adam'>
+pooling: avg
+precip_kernal: (2, 2)
+precip_strides: (1, 1)
+shuffle_train: 'True'
+start_time: '2022_11_25__13_26_10'
+strides: (1, 1)
+swe_days_relative: '[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84]'
+swe_kernal: (5, 5)
+swe_strides: (1, 1)
+temp_kernal: (2, 2)
+temp_strides: (1, 1)
+test_pred_end_time: '2022_11_25__13_57_38'
+test_pred_start_time: '2022_11_25__13_55_54'
+tf_board_update_freq: '100'
+train_end_time: '2022_11_25__13_54_02'
+train_start_time: '2022_11_25__13_26_19'
+use_masks: 'True'
+val_pred_end_time: '2022_11_25__13_55_54'
+val_pred_start_time: '2022_11_25__13_54_02'
+y_col: m3
