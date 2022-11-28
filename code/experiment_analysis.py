@@ -209,14 +209,16 @@ class ExperimentAnalysis:
 
     @staticmethod
     def plot_val_scores(val_scores: pd.DataFrame, min_epoch: int = 5,
-                        min_declining: int = 3):
+                        min_declining: int = 3, max_final_score: float = None):
         """Plot the validation scores from `get_validation_epoch_scores` method.
         """
         subset = val_scores[(val_scores["n_decline"] >= min_declining) &
                             (val_scores["n_epoch"] >= min_epoch)]
+        if max_final_score is not None:
+            subset = subset[subset["final_score"] <= max_final_score]
         gages = subset["gages"].unique()
         n_plots = len(gages)
-        fig, axes = plt.subplots(n_plots, figsize=(5, 4*n_plots))
+        fig, axes = plt.subplots(n_plots, figsize=(6, 5*n_plots))
         if n_plots == 1:
             axes = [axes]
         for i, gage in enumerate(gages):
@@ -230,4 +232,5 @@ class ExperimentAnalysis:
                 print(f"exp_id='{exp_id}', (final_score={final_score:.3f}")
             ax.set_title(gage)
             ax.legend(loc=(1.01, 0))
-        return fig
+        plt.show()
+        return subset
