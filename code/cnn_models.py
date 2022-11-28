@@ -427,7 +427,7 @@ def get_kernal_stride(input_sizes: dict):
     return kernal_stride
 
 
-class ImgSizeCNN:
+class ImgSizeCNNArchitecture:
 
     def __init__(self):
         # Get the sizes of the images for each streamgage:
@@ -490,6 +490,101 @@ class ImgSizeCNN:
         outputs = layers.Dense(n_y, activation="linear")(x)
 
         # Create the model:
+        transformer = keras.Model(
+            [dem_inputs, temp_inputs, precip_inputs, swe_inputs, et_inputs],
+            outputs
+        )
+
+        return transformer
+
+
+class SpaceTimeTransformerArchitecture:
+
+    def __init__(self):
+        # Get the sizes of the images for each streamgage:
+        with open(os.path.join(DATA_DIR, "gage_img_sizes.yaml"), "r") as f:
+            gage_sizes = yaml.safe_load(f)
+        with open(os.path.join(DATA_DIR, "avg_img_sizes.yaml"), "r") as f:
+            avg_sizes = yaml.safe_load(f)
+        for k, v in avg_sizes.items():
+            gage_sizes[k]["avg"] = v
+        self.img_sizes = gage_sizes
+
+    def get_model(self, gage: str, n_days_precip=7, n_days_temp=7, n_swe=12,
+                  n_et=1, enc_dense_dim=32, enc_num_heads=2, n_y=14,
+                  hidden_dim=8, dropout=0.5, dropout_concat: bool = False,
+                  pooling: str = "avg"):
+        """Create a new SpaceTimeTransformerArchitecture model architecture with
+        the specified parameters."""
+        input_sizes = {k: v[gage] for k, v in self.img_sizes.items()}
+
+        kernal_stride = get_kernal_stride(input_sizes)
+
+        # Single image CNN inputs - dem:
+        dem_inputs, dem_outputs = time_dist_cnn(
+            1, "dem", hidden_dim,
+            kernel_size=kernal_stride["dem"]["kernal"], strides=kernal_stride["dem"]["stride"],
+            pooling=pooling, w=input_sizes["dem"][0], h=input_sizes["dem"][1],
+        )
+
+        # Multiple image CNN inputs - temp / precip / swe / et:
+        et_inputs, et_outputs = time_dist_cnn(
+            n_et, "et", hidden_dim,
+            kernel_size=kernal_stride["et"]["kernal"], strides=kernal_stride["et"]["stride"],
+            pooling=pooling, w=input_sizes["et"][0], h=input_sizes["et"][1],
+        )
+        temp_inputs, temp_outputs = time_dist_cnn(
+            n_days_temp, "temp", hidden_dim,
+            kernel_size=kernal_stride["temp"]["kernal"], strides=kernal_stride["temp"]["stride"],
+            pooling=pooling, w=input_sizes["temp"][0], h=input_sizes["temp"][1],
+        )
+        precip_inputs, precip_outputs = time_dist_cnn(
+            n_days_precip, "precip", hidden_dim,
+            kernel_size=kernal_stride["precip"]["kernal"], strides=kernal_stride["precip"]["stride"],
+            pooling=pooling, w=input_sizes["precip"][0], h=input_sizes["precip"][1],
+        )
+        swe_inputs, swe_outputs = time_dist_cnn(
+            n_swe, "swe", hidden_dim,
+            kernel_size=kernal_stride["swe"]["kernal"], strides=kernal_stride["swe"]["stride"],
+            pooling=pooling, w=input_sizes["swe"][0], h=input_sizes["swe"][1],
+        )
+
+        # Concatenate CNN outputs:
+        concat = tf.keras.layers.Concatenate(axis=1, name="concat")(
+            [dem_outputs, temp_outputs, precip_outputs, swe_outputs, et_outputs],
+        )
+        # THIS IS A REALLY HEAVY REGULARIZER THAT MAY BE USEFUL FOR TRAINING A FINAL MODEL ON MANY EPOCHS:
+        if dropout_concat:
+            concat = layers.Dropout(dropout, name="concat_dropout")(concat)
+
+        # Transformer encoder time dimension:
+        encoder_outputs = TransformerEncoder(  # NOQA
+            embed_dim=concat.shape[-1], dense_dim=enc_dense_dim, num_heads=enc_num_heads,
+            name="time_transformer"
+        )(concat)
+        encoder_outputs = layers.Dropout(dropout, name="time_transformer_dropout")(encoder_outputs)
+
+        # Swap the time-space axis:
+        dim_swap = keras.layers.Permute((2, 1), input_shape=encoder_outputs.shape, name="spacetime_swap")(encoder_outputs)
+
+        # Transformer encoder space dimension:
+        space_encoder_outputs = TransformerEncoder(  # NOQA
+            embed_dim=dim_swap.shape[-1], dense_dim=enc_dense_dim, num_heads=enc_num_heads,
+            name="space_transformer"
+        )(dim_swap)
+        space_encoder_outputs = layers.Dropout(dropout, name="space_transformer_dropout")(space_encoder_outputs)
+
+        flatten = layers.Flatten(name="flatten_transformer_outputs")(space_encoder_outputs)
+        x = layers.Dropout(dropout, name="dropout_transformer_outputs")(flatten)
+
+        dense1 = layers.Dense(512, activation="relu", name="dense1")(x)
+        dropout_dense1 = layers.Dropout(dropout, name="dropout_dense1")(dense1)
+
+        dense2 = layers.Dense(128, activation="relu", name="dense2")(dropout_dense1)
+        dropout_dense2 = layers.Dropout(dropout, name="dropout_dense2")(dense2)
+
+        outputs = layers.Dense(n_y, activation="linear", name="prediction")(dropout_dense2)
+
         transformer = keras.Model(
             [dem_inputs, temp_inputs, precip_inputs, swe_inputs, et_inputs],
             outputs
