@@ -1,0 +1,33 @@
+architecture: SpaceTimeTransformerArchitecture
+dropout: '0.5'
+enc_dense_dim: '24'
+enc_embed_dim: '8'
+enc_num_heads: '4'
+end_time: '2022_11_28__01_17_57'
+epochs: '3'
+gages: '[''11266500'']'
+hidden_dim: '8'
+id: a38552a3-3b75-433e-866d-f1a58489743a
+learning_rate: '0.0001'
+loss: mean_squared_error
+n_days_et: '8'
+n_days_precip: '7'
+n_days_temp: '7'
+n_days_y: '1'
+n_et: '1'
+n_swe: '12'
+opt: <class 'keras.optimizers.optimizer_experimental.adam.Adam'>
+pooling: flatten
+shuffle_train: 'True'
+start_time: '2022_11_28__01_07_33'
+swe_days_relative: '[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84]'
+test_pred_end_time: '2022_11_28__01_17_52'
+test_pred_start_time: '2022_11_28__01_17_20'
+tf_board_update_freq: '100'
+train_end_time: '2022_11_28__01_16_52'
+train_start_time: '2022_11_28__01_08_51'
+use_masks: 'True'
+val_pred_end_time: '2022_11_28__01_17_20'
+val_pred_start_time: '2022_11_28__01_16_52'
+y_col: m3
+y_seq: 'False'
