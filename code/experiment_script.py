@@ -329,59 +329,65 @@ class Experiment:
 
 if __name__ == "__main__":
 
-    # Dicts of experiment parameters to try:
-    EXPERIMENT_PARAMS = [
-        dict(
-            n_days_precip=28, n_days_temp=28, n_days_et=32,
-            swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
-            enc_dense_dim=24, enc_num_heads=4, hidden_dim=8, dropout=0.5, dropout_concat=False,
-            epochs=5
-        ),
-        dict(
-            n_days_precip=14, n_days_temp=14, n_days_et=16,
-            swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
-            enc_dense_dim=24, enc_num_heads=4, hidden_dim=8, dropout=0.5, dropout_concat=False,
-            epochs=5
-        ),
-        dict(
-            n_days_precip=7, n_days_temp=7, n_days_et=8,
-            swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
-            enc_dense_dim=48, enc_num_heads=4, hidden_dim=16, dropout=0.5, dropout_concat=True,
-            epochs=5
-        ),
-        dict(
-            n_days_precip=7, n_days_temp=7, n_days_et=8,
-            swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
-            enc_dense_dim=48, enc_num_heads=4, hidden_dim=16, dropout=0.5, dropout_concat=True,
-            epochs=5
-        ),
-        dict(
-            n_days_precip=28, n_days_temp=28, n_days_et=32,
-            swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
-            enc_dense_dim=48, enc_num_heads=8, hidden_dim=16, dropout=0.5, dropout_concat=True,
-            epochs=5
-        ),
-        dict(
-            n_days_precip=7, n_days_temp=7, n_days_et=8,
-            swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
-            enc_dense_dim=24, enc_num_heads=4, hidden_dim=32, dropout=0.5, dropout_concat=False,
-            epochs=5
-        ),
-        dict(
-            n_days_precip=1, n_days_temp=21, n_days_et=8,
-            swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
-            enc_dense_dim=48, enc_num_heads=8, hidden_dim=16, dropout=0.5, dropout_concat=True,
-            epochs=5
-        ),
-        dict(
-            n_days_precip=1, n_days_temp=21, n_days_et=8,
-            swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
-            enc_dense_dim=24, enc_num_heads=4, hidden_dim=8, dropout=0.5, dropout_concat=True,
-            epochs=5
-        ),
+    params = dict(
+        dropout=0.5, dropout_concat=True, enc_dense_dim=48, enc_num_heads=8,
+        epochs=20, gage="11402000", hidden_dim=16, n_days_et=32, n_days_precip=28, n_days_temp=28,
+        swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
+    )
 
-    ]
-    for gage in ['11402000', '11266500', '11402000', '11189500', '11318500', '11202710', '11208000', '11185500']:
-        for experiment_params in EXPERIMENT_PARAMS:
-            experiment_params["gage"] = gage  # NOQA
-            experiment = Experiment(**experiment_params)
+    # # Dicts of experiment parameters to try:
+    # EXPERIMENT_PARAMS = [
+    #     dict(
+    #         n_days_precip=28, n_days_temp=28, n_days_et=32,
+    #         swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
+    #         enc_dense_dim=24, enc_num_heads=4, hidden_dim=8, dropout=0.5, dropout_concat=False,
+    #         epochs=5
+    #     ),
+    #     dict(
+    #         n_days_precip=14, n_days_temp=14, n_days_et=16,
+    #         swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
+    #         enc_dense_dim=24, enc_num_heads=4, hidden_dim=8, dropout=0.5, dropout_concat=False,
+    #         epochs=5
+    #     ),
+    #     dict(
+    #         n_days_precip=7, n_days_temp=7, n_days_et=8,
+    #         swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
+    #         enc_dense_dim=48, enc_num_heads=4, hidden_dim=16, dropout=0.5, dropout_concat=True,
+    #         epochs=5
+    #     ),
+    #     dict(
+    #         n_days_precip=7, n_days_temp=7, n_days_et=8,
+    #         swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
+    #         enc_dense_dim=48, enc_num_heads=4, hidden_dim=16, dropout=0.5, dropout_concat=True,
+    #         epochs=5
+    #     ),
+    #     dict(
+    #         n_days_precip=28, n_days_temp=28, n_days_et=32,
+    #         swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
+    #         enc_dense_dim=48, enc_num_heads=8, hidden_dim=16, dropout=0.5, dropout_concat=True,
+    #         epochs=5
+    #     ),
+    #     dict(
+    #         n_days_precip=7, n_days_temp=7, n_days_et=8,
+    #         swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
+    #         enc_dense_dim=24, enc_num_heads=4, hidden_dim=32, dropout=0.5, dropout_concat=False,
+    #         epochs=5
+    #     ),
+    #     dict(
+    #         n_days_precip=1, n_days_temp=21, n_days_et=8,
+    #         swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
+    #         enc_dense_dim=48, enc_num_heads=8, hidden_dim=16, dropout=0.5, dropout_concat=True,
+    #         epochs=5
+    #     ),
+    #     dict(
+    #         n_days_precip=1, n_days_temp=21, n_days_et=8,
+    #         swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
+    #         enc_dense_dim=24, enc_num_heads=4, hidden_dim=8, dropout=0.5, dropout_concat=True,
+    #         epochs=5
+    #     ),
+    #
+    # ]
+    # for gage in ['11402000', '11266500', '11402000', '11189500', '11318500', '11202710', '11208000', '11185500']:
+    #     for experiment_params in EXPERIMENT_PARAMS:
+    #         experiment_params["gage"] = gage  # NOQA
+    #         experiment = Experiment(**experiment_params)

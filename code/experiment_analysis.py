@@ -229,7 +229,6 @@ class ExperimentAnalysis:
                 final_score = row["final_score"]
                 scores = row["scores"]
                 ax.plot(range(len(scores)), scores, label=f"({final_score:.2f}) {exp_id}")
-                print(f"exp_id='{exp_id}', (final_score={final_score:.3f}")
             ax.set_title(gage)
             ax.legend(loc=(1.01, 0))
         plt.show()
