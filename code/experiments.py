@@ -2,17 +2,23 @@
 
 from collections import defaultdict
 import os
+import warnings
 
 from keras.models import load_model
 from keras.utils import custom_object_scope
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error
 import tensorflow as tf
 import yaml
 
 from cnn_models import TransformerDecoder, TransformerEncoder
 from cnn_dataset import CNNSeqDataset
+from utils import open_y_data
 
-DIR, FILENAME = os.path.split(__file__)
+# DIR, FILENAME = os.path.split(__file__)
+DIR = os.getcwd()
 DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
 TRAIN_DIR = os.path.join(DATA_DIR, "training_data")
 EXPERIMENT_DIR = os.path.join(os.path.dirname(DIR), "experiments")
@@ -28,6 +34,7 @@ class Experiment:
     """Work with a saved experiment."""
 
     def __init__(self, experiment_id: str):
+        self.ground_truth = open_y_data()
         self.experiment_id = experiment_id
         metadata_fp = f"{self.experiment_id}__metadata.yaml"
         fp = experiment_path(metadata_fp)
@@ -49,9 +56,9 @@ class Experiment:
 
     def load_trained_model(self, epoch: int = None):
         """Load the trained model.
-        
+
         Args:
-            epoch: which epoch's model to load. If not passed  
+            epoch: which epoch's model to load. If not passed
                 loads the final saved model.
         """
         if epoch is None:
@@ -68,7 +75,7 @@ class Experiment:
         self.loaded_models[epoch] = model
 
     def load_model_dataset(self):
-        """Load the CNNSeqDataset with the correct parameters 
+        """Load the CNNSeqDataset with the correct parameters
         for the experiment model."""
         self.cnn_dataset = CNNSeqDataset(
             precip_dirs=[TRAIN_DIR],
@@ -111,8 +118,8 @@ class Experiment:
         self.test_data = tf.data.Dataset.from_generator(
             self.cnn_dataset.keras_train_gen, output_signature=output_signature)
 
-    def make_predictions(self, predict: str = "test",
-                         epoch: int = None):
+    def get_predictions(self, predict: str = "test",
+                        epoch: int = None):
         try:
             return self.predictions[epoch][predict]
         except KeyError:
@@ -138,3 +145,92 @@ class Experiment:
         pred = df[order]
         self.predictions[epoch][predict] = pred
         return pred
+
+    def load_predictions(self, predict: str = "test"):
+        fp = experiment_path(f"{self.experiment_id}__{predict}_pred.csv")
+        df = pd.read_csv(fp)
+        df["gage"] = df["gage"].astype(str)
+        return df
+
+    def get_test_set(self, day: int = 1):
+        # TODO: Only have these predictions for LSTM currently.
+        gage = "11402000"
+
+        # Load the model predictions:
+        pred = self.load_predictions("test")
+        pred["date"] = pd.to_datetime(pred["date"])  # NOQA
+        col = f"y_day_{day}"
+        pred = pred[pred["gage"] == gage].set_index("date")[col]
+        pred.name = "pred"
+        pred = pred.shift(day-1).dropna()
+
+        # Get the true values:
+        y = self.ground_truth
+        y = y[y["gage"] == gage].set_index("date").loc[pred.index][self.metadata["y_col"]]
+        y.name = "ground_truth"
+
+        # Get the LSTM predictions:
+        lstm_path = os.path.join(DATA_DIR, "LSTM_11402000_test_pred.csv")
+        lstm_pred = pd.read_csv(lstm_path)
+        lstm_pred["pred_date"] = pd.to_datetime(lstm_pred["pred_date"])
+        col = f"day{day}_pred"
+        lstm_pred = lstm_pred.set_index("pred_date")[col]
+        lstm_pred.name = "lstm_pred"
+        # TODO: confirm with Zixi logic for shifting dates:
+        lstm_pred = lstm_pred.shift(day).dropna()
+
+        return pd.concat([y, pred, lstm_pred], axis=1).dropna()
+
+    def plot_test_pred_vs_lstm(self, day: int = 1):
+        # TODO: Only have these predictions for LSTM currently.
+        gage = "11402000"
+
+        test_set = self.get_test_set(day)
+
+        fig, axes = plt.subplots(1, 2, figsize=(14, 4))
+        ax = axes[1]
+        ax.plot(test_set["pred"], color="r", label="Prediction")
+        ax.plot(test_set["ground_truth"], color="b", label="Ground Truth")
+        rmse = self.score_rmse(test_set["ground_truth"], test_set["pred"])
+        rrmse = self.score_rrmse(test_set["ground_truth"], test_set["pred"])
+        mape = self.score_mape(test_set["ground_truth"], test_set["pred"])
+        ax.set_title(f"Deep Learning Image Model\nRMSE={rmse:.2f}, RRMSE={rrmse:.2f}, MAPE={mape:.2f}")
+        ax.legend()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment="right")
+        ax.set_xlim(self.get_test_set().index.min(), self.get_test_set().index.max())
+        ax.set_ylabel("Discharge m3")
+
+        ax = axes[0]
+        ax.plot(test_set["lstm_pred"], color="r", label="Prediction")
+        ax.plot(test_set["ground_truth"], color="b", label="Ground Truth")
+        rmse = self.score_rmse(test_set["ground_truth"], test_set["lstm_pred"])
+        rrmse = self.score_rrmse(test_set["ground_truth"], test_set["lstm_pred"])
+        mape = self.score_mape(test_set["ground_truth"], test_set["lstm_pred"])
+        ax.set_title(f"LSTM Model\nRMSE={rmse:.2f}, RRMSE={rrmse:.2f}, MAPE={mape:.2f}")
+        ax.legend()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment="right")
+        ax.set_xlim(self.get_test_set().index.min(), self.get_test_set().index.max())
+        ax.set_ylabel("Discharge m3")
+
+        fig.suptitle(f"Gage {gage} 2016 Test Set Predictions, {day} Day{'s' if day > 1 else ''} Ahead", y=1.05)
+        return fig
+
+    @staticmethod
+    def score_rmse(y_true, y_pred):
+        return mean_squared_error(y_true, y_pred, squared=False)
+
+    @staticmethod
+    def score_mape(y_true, y_pred):
+        return mean_absolute_percentage_error(y_true, y_pred)
+
+    @staticmethod
+    def score_rrmse(y_true, y_pred):
+        num = np.sum(np.square(y_true - y_pred))
+        den = np.sum(np.square(y_pred))
+        squared_error = num/den
+        rrmse_loss = np.sqrt(squared_error)
+        return rrmse_loss
