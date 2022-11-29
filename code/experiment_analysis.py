@@ -179,7 +179,7 @@ class ExperimentAnalysis:
 
     @property
     def results(self):
-        results_fp = experiment_path("rmse_results.csv")
+        results_fp = experiment_path("experiment_results.csv")
         return pd.read_csv(results_fp, encoding="utf-8")
 
     def cleanup_bad_experiments(self):
