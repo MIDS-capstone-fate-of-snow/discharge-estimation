@@ -126,7 +126,7 @@ class GTExperiment:
         print(f"Num training examples = {len(self.cnn_data.train_pairs)}")
 
         assert len(self.params["gages"]) == 1
-        experiment["architecture"] = "SpaceTimeTransformerArchitecture"
+        experiment["architecture"] = "GAPTransArchitecture"
         model = self.get_gaptrans_model()
         fp = os.path.join(EXPERIMENT_DIR, f"{experiment_id}__model.png")
         keras.utils.plot_model(model, fp, show_shapes=True)

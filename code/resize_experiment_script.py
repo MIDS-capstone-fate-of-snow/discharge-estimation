@@ -120,8 +120,8 @@ class ISExperiment:
         print(f"Num training examples = {len(self.cnn_data.train_pairs)}")
 
         assert len(self.params["gages"]) == 1
-        experiment["architecture"] = "SpaceTimeTransformerArchitecture"
-        model = self.get_gaptrans_model()
+        experiment["architecture"] = "ImgSizeCNNArchitecture"
+        model = self.get_imgsize_model()
         fp = os.path.join(EXPERIMENT_DIR, f"{experiment_id}__model.png")
         keras.utils.plot_model(model, fp, show_shapes=True)
 
@@ -309,12 +309,12 @@ class ISExperiment:
             yield X, np.expand_dims(sample["y"], 0)
             i += 1
 
-    def get_gaptrans_model(self):
+    def get_imgsize_model(self):
         # Create the model architecture:
         architecture = ImgSizeCNNArchitecture()
 
         model = architecture.get_model(
-            gage=self.params["gages"],
+            gage=self.params["gages"][0],
             n_days_precip=self.params["n_days_precip"],
             n_days_temp=self.params["n_days_temp"],
             n_swe=self.params["n_swe"],
