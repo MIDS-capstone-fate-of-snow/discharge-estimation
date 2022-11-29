@@ -193,13 +193,13 @@ class Experiment:
 
         return test_set
 
-    def plot_test_pred_vs_lstm(self, day: int = 1):
+    def plot_test_pred_vs_lstm(self, day: int = 1, figsize=(14, 4), dpi=150):
         # TODO: Only have these predictions for LSTM currently.
         gage = "11402000"
 
         test_set = self.get_test_set(day)
 
-        fig, axes = plt.subplots(1, 2, figsize=(14, 4))
+        fig, axes = plt.subplots(1, 2, figsize=figsize, dpi=dpi)
         ax = axes[1]
         ax.plot(test_set["pred"], color="r", label="Prediction")
         ax.plot(test_set["ground_truth"], color="b", label="Ground Truth")
