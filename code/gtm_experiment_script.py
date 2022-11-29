@@ -124,7 +124,7 @@ class GTMExperiment:
 
         assert len(self.params["gages"]) == 1
         experiment["architecture"] = "SpaceTimeTransformerArchitecture"
-        model = self.get_spacetimetransformer_model()
+        model = self.get_gaptransmax_model()
         fp = os.path.join(EXPERIMENT_DIR, f"{experiment_id}__model.png")
         keras.utils.plot_model(model, fp, show_shapes=True)
 
