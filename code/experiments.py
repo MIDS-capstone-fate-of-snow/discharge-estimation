@@ -7,6 +7,7 @@ import warnings
 from keras.models import load_model
 from keras.utils import custom_object_scope
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import tensorflow as tf
 import yaml
@@ -184,7 +185,13 @@ class Experiment:
         # TODO: confirm with Zixi logic for shifting dates:
         lstm_pred = lstm_pred.shift(day).dropna()
 
-        return pd.concat([y, pred, lstm_pred], axis=1).dropna()
+        test_set = pd.concat([y, pred, lstm_pred], axis=1).dropna()
+
+        # Set minimum to zero for predictions:
+        for col in ("pred", "lstm_pred"):
+            test_set[col] = np.where(test_set[col] < 0, 0, test_set[col])
+
+        return test_set
 
     def plot_test_pred_vs_lstm(self, day: int = 1):
         # TODO: Only have these predictions for LSTM currently.
