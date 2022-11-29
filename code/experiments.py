@@ -199,7 +199,7 @@ class Experiment:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment="right")
-        ax.set_xlim(self.get_test_set().index.min(), self.get_test_set().index.max())
+        ax.set_xlim(test_set.index.min(), test_set.index.max())
         ax.set_ylabel("Discharge m3")
 
         ax = axes[0]
@@ -213,7 +213,7 @@ class Experiment:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment="right")
-        ax.set_xlim(self.get_test_set().index.min(), self.get_test_set().index.max())
+        ax.set_xlim(test_set.index.min(), test_set.index.max())
         ax.set_ylabel("Discharge m3")
 
         fig.suptitle(f"Gage {gage} 2016 Test Set Predictions, {day} Day{'s' if day > 1 else ''} Ahead", y=1.05)
