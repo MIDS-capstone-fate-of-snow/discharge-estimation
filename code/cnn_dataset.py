@@ -78,7 +78,9 @@ class CNNSeqDataset:
         self.min_date = convert_datetime(min_date)
         self.max_date = convert_datetime(max_date)
         self.val_start = convert_datetime(val_start)
+        self.train_end = self.val_start - datetime.timedelta(days=1)
         self.test_start = convert_datetime(test_start)
+        self.val_end = self.test_start - datetime.timedelta(days=1)
 
         self.use_masks = use_masks
 
@@ -154,11 +156,11 @@ class CNNSeqDataset:
         self.y_dates = pd.date_range(self.date_bounds["y_min_date"], self.date_bounds["y_max_date"])
 
         # Calculate the gage-date pairs for training/validation/test:
-        self.train_pairs = self.get_training_pairs(min(self.y_dates), self.val_start - datetime.timedelta(days=1))
+        self.train_pairs = self.get_training_pairs(min(self.y_dates), self.train_end)
         if self.shuffle_train:
             random.seed(random_seed)
             random.shuffle(self.train_pairs)
-        self.val_pairs = self.get_training_pairs(self.val_start, self.test_start - datetime.timedelta(days=1))
+        self.val_pairs = self.get_training_pairs(self.val_start, self.val_end)
         self.test_pairs = self.get_training_pairs(self.test_start, max(self.y_dates))
 
         # Compute image normalization values for training period (if not already saved):
@@ -192,6 +194,10 @@ class CNNSeqDataset:
             self.ratio_masks, self.bool_masks = self.get_watershed_masks()
         else:
             self.ratio_masks, self.bool_masks = None, None
+
+        # The order of features for keras datasets for model training:
+        # TODO: make this configurable.
+        self.keras_features = ("dem", "temp", "precip", "swe", "et")
 
     @property
     def saved_img_norm(self):
@@ -457,3 +463,78 @@ class CNNSeqDataset:
                     if retry_count == 10:
                         warnings.warn(f"OSError in train_data_generator (tried 10 times): gage={gage}, y_date={y_date}")
                     continue
+
+    def keras_train_gen(self, debug: bool = False):
+        """Construct Keras-compatible train generator."""
+        train_data_gen = self.train_data_generator()
+        i = 0
+        while True:
+
+            # Generate the training sample dict, making the generator infinite:
+            try:
+                sample = next(train_data_gen)
+            except StopIteration:
+                # Reset the generator:
+                train_data_gen = self.train_data_generator()
+                i = 0
+                sample = next(train_data_gen)
+
+            # Print debug info:
+            if debug:
+                print(f"Sample {i}, {sample['debug_data']}")
+
+            # Yield data in format required by tensorflow:
+            X = [sample[ft] for ft in self.keras_features]
+            X = tuple([np.expand_dims(np.expand_dims(x, -1), 0) for x in X])
+            yield X, np.expand_dims(sample["y"], 0)
+            i += 1
+
+    def keras_val_gen(self, debug: bool = False):
+        """Construct Keras-compatible validation generator."""
+        data_gen = self.val_data_generator()
+        i = 0
+        while True:
+
+            # Generate the training sample dict, making the generator infinite:
+            try:
+                sample = next(data_gen)
+            except StopIteration:
+                # Reset the generator:
+                data_gen = self.val_data_generator()
+                i = 0
+                sample = next(data_gen)
+
+            # Print debug info:
+            if debug:
+                print(f"Sample {i}, {sample['debug_data']}")
+
+            # Yield data in format required by tensorflow:
+            X = [sample[ft] for ft in self.keras_features]
+            X = tuple([np.expand_dims(np.expand_dims(x, -1), 0) for x in X])
+            yield X, np.expand_dims(sample["y"], 0)
+            i += 1
+
+    def keras_test_gen(self, debug: bool = False):
+        """Construct Keras-compatible test generator."""
+        data_gen = self.test_data_generator()
+        i = 0
+        while True:
+
+            # Generate the training sample dict, making the generator infinite:
+            try:
+                sample = next(data_gen)
+            except StopIteration:
+                # Reset the generator:
+                data_gen = self.test_data_generator()
+                i = 0
+                sample = next(data_gen)
+
+            # Print debug info:
+            if debug:
+                print(f"Sample {i}, {sample['debug_data']}")
+
+            # Yield data in format required by tensorflow:
+            X = [sample[ft] for ft in self.keras_features]
+            X = tuple([np.expand_dims(np.expand_dims(x, -1), 0) for x in X])
+            yield X, np.expand_dims(sample["y"], 0)
+            i += 1

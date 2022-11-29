@@ -7,15 +7,13 @@ import warnings
 from keras.models import load_model
 from keras.utils import custom_object_scope
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error
 import tensorflow as tf
 import yaml
 
 from cnn_models import TransformerDecoder, TransformerEncoder
 from cnn_dataset import CNNSeqDataset
-from utils import open_y_data
+from utils import open_y_data, score_mape, score_rmse, score_rrmse
 
 # DIR, FILENAME = os.path.split(__file__)
 DIR = os.getcwd()
@@ -43,9 +41,16 @@ class Experiment:
         for int_key in ("n_days_precip", "n_days_temp", "n_days_et", "n_days_y", "n_swe", "n_et"):
             self.metadata[int_key] = int(self.metadata[int_key])
         for eval_key in ("swe_days_relative", "y_seq", "use_masks", "gages", "shuffle_train"):
-            self.metadata[eval_key] = eval(self.metadata[eval_key])
+            try:
+                self.metadata[eval_key] = eval(self.metadata[eval_key])
+            except KeyError:  # Use defaults for earlier experiments which didn't have parameter:
+                defaults = {"y_seq": True}
+                self.metadata[eval_key] = defaults[eval_key]
         self.ckpt_dir = experiment_path(f"{experiment_id}__ckpts")
-        self.ckpts = sorted(filter(lambda fn: fn.endswith(".hdf5"), os.listdir(self.ckpt_dir)))
+        try:
+            self.ckpts = sorted(filter(lambda fn: fn.endswith(".hdf5"), os.listdir(self.ckpt_dir)))
+        except FileNotFoundError:
+            self.ckpts = []
         self.trained_model_dir = experiment_path(f"{experiment_id}__trained_model")
         self.cnn_dataset = None
         self.train_data = None
@@ -191,9 +196,9 @@ class Experiment:
         ax = axes[1]
         ax.plot(test_set["pred"], color="r", label="Prediction")
         ax.plot(test_set["ground_truth"], color="b", label="Ground Truth")
-        rmse = self.score_rmse(test_set["ground_truth"], test_set["pred"])
-        rrmse = self.score_rrmse(test_set["ground_truth"], test_set["pred"])
-        mape = self.score_mape(test_set["ground_truth"], test_set["pred"])
+        rmse = score_rmse(test_set["ground_truth"], test_set["pred"])
+        rrmse = score_rrmse(test_set["ground_truth"], test_set["pred"])
+        mape = score_mape(test_set["ground_truth"], test_set["pred"])
         ax.set_title(f"Deep Learning Image Model\nRMSE={rmse:.2f}, RRMSE={rrmse:.2f}, MAPE={mape:.2f}")
         ax.legend()
         with warnings.catch_warnings():
@@ -205,9 +210,9 @@ class Experiment:
         ax = axes[0]
         ax.plot(test_set["lstm_pred"], color="r", label="Prediction")
         ax.plot(test_set["ground_truth"], color="b", label="Ground Truth")
-        rmse = self.score_rmse(test_set["ground_truth"], test_set["lstm_pred"])
-        rrmse = self.score_rrmse(test_set["ground_truth"], test_set["lstm_pred"])
-        mape = self.score_mape(test_set["ground_truth"], test_set["lstm_pred"])
+        rmse = score_rmse(test_set["ground_truth"], test_set["lstm_pred"])
+        rrmse = score_rrmse(test_set["ground_truth"], test_set["lstm_pred"])
+        mape = score_mape(test_set["ground_truth"], test_set["lstm_pred"])
         ax.set_title(f"LSTM Model\nRMSE={rmse:.2f}, RRMSE={rrmse:.2f}, MAPE={mape:.2f}")
         ax.legend()
         with warnings.catch_warnings():
@@ -218,19 +223,3 @@ class Experiment:
 
         fig.suptitle(f"Gage {gage} 2016 Test Set Predictions, {day} Day{'s' if day > 1 else ''} Ahead", y=1.05)
         return fig
-
-    @staticmethod
-    def score_rmse(y_true, y_pred):
-        return mean_squared_error(y_true, y_pred, squared=False)
-
-    @staticmethod
-    def score_mape(y_true, y_pred):
-        return mean_absolute_percentage_error(y_true, y_pred)
-
-    @staticmethod
-    def score_rrmse(y_true, y_pred):
-        num = np.sum(np.square(y_true - y_pred))
-        den = np.sum(np.square(y_pred))
-        squared_error = num/den
-        rrmse_loss = np.sqrt(squared_error)
-        return rrmse_loss

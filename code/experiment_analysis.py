@@ -5,15 +5,14 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.metrics import mean_squared_error
 from tqdm import tqdm
 import yaml
 
-from utils import open_y_data
+from utils import open_y_data, score_mape, score_rmse, score_rrmse
 
 pd.set_option("display.max_colwidth", 500)
 
-DIR = os.getcwd()
+DIR, FILENAME = os.path.split(__file__)
 EXPERIMENT_DIR = os.path.join(os.path.dirname(DIR), "experiments")
 if not os.path.exists(EXPERIMENT_DIR):
     os.mkdir(EXPERIMENT_DIR)
@@ -119,11 +118,11 @@ class ExperimentAnalysis:
         return fig
 
     @staticmethod
-    def compute_experiment_rmse(merged_df: pd.DataFrame,
-                                trim_negatives: bool = True):
+    def compute_experiment_scores(merged_df: pd.DataFrame,
+                                  trim_negatives: bool = True):
         """Compute RMSE results for a single experiment."""
         cols = [c for c in merged_df.columns if "y_day_" in c and "_aligned" in c]
-        rmse = dict()
+        rmse, rrmse, mape = dict(), dict(), dict()
         all_pred, all_actual = list(), list()
         for col in cols:
             day = int(col.replace("y_day_", "").replace("_aligned", ""))
@@ -132,37 +131,54 @@ class ExperimentAnalysis:
             predicted = df[col].values
             if trim_negatives:
                 predicted = np.where(predicted < 0, 0, predicted)
-            score = mean_squared_error(actual, predicted, squared=False)
-            rmse[f"rmse_{day}day"] = score
+            rmse_score = score_rmse(actual, predicted)
+            rrmse_score = score_rrmse(actual, predicted)
+            mape_score = score_mape(actual, predicted)
+            rmse[f"rmse_{day}day"] = rmse_score
+            rrmse[f"rrmse_{day}day"] = rrmse_score
+            mape[f"mape_{day}day"] = mape_score
             all_actual += list(actual)
             all_pred += list(predicted)
         rmse["rmse_avg"] = np.mean(list(rmse.values()))
-        rmse["rmse_total"] = mean_squared_error(all_actual, all_pred, squared=False)
-        return rmse
+        rmse["rmse_total"] = score_rmse(all_actual, all_pred)
+        rmse["rrmse_avg"] = np.mean(list(rrmse.values()))
+        rmse["rrmse_total"] = score_rrmse(all_actual, all_pred)
+        rmse["mape_avg"] = np.mean(list(mape.values()))
+        rmse["mape_total"] = score_mape(all_actual, all_pred)
 
-    def compute_rmse_results(self, trim_negatives: bool = True):
+        return rmse, rrmse, mape
+
+    def compute_results(self, trim_negatives: bool = True):
         """Save a CSV of all experiment RMSE results."""
         experiment_results = self.experiments.copy()
         for experiment_id in tqdm(self.experiments.index):
             merged = self.merge_pred_and_truth(experiment_id)
-            rmse = self.compute_experiment_rmse(merged, trim_negatives=trim_negatives)
+            rmse, rrmse, mape = self.compute_experiment_scores(merged, trim_negatives=trim_negatives)
             for col, value in rmse.items():
                 if col not in experiment_results.columns:
                     experiment_results[col] = np.nan
                 experiment_results.loc[experiment_id, col] = value
+            for col, value in rrmse.items():
+                if col not in experiment_results.columns:
+                    experiment_results[col] = np.nan
+                experiment_results.loc[experiment_id, col] = value
+            for col, value in mape.items():
+                if col not in experiment_results.columns:
+                    experiment_results[col] = np.nan
+                experiment_results.loc[experiment_id, col] = value
         experiment_results = experiment_results.reset_index()
-        experiment_results = experiment_results.sort_values(by=["rmse_total"], ascending=True)
+        experiment_results = experiment_results.sort_values(by=["rrmse_total"], ascending=True)
         first = ["id", "gages", "epochs", "hidden_dim", "enc_num_heads", "dec_num_heads",
                  "n_days_et", "n_days_precip", "n_days_temp", "n_days_y", "n_et", "n_swe"]
         order = first + [c for c in experiment_results.columns if c not in first]
         experiment_results = experiment_results[order]
-        results_fp = experiment_path("rmse_results.csv")
+        results_fp = experiment_path("experiment_results.csv")
         experiment_results.to_csv(results_fp, encoding="utf-8", index=False)
         print(f"Results saved to:\n  {results_fp}")
         return experiment_results
 
     @property
-    def rmse_results(self):
+    def results(self):
         results_fp = experiment_path("rmse_results.csv")
         return pd.read_csv(results_fp, encoding="utf-8")
 

@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import requests
 from shapely import affinity, geometry
+from sklearn.metrics import mean_absolute_percentage_error, mean_squared_error
 from tqdm import tqdm
 
 from tif_files import TifFile
@@ -457,3 +458,23 @@ def convert_training_tif_files(train_dir: str):
         np_fp = tif_to_npy(fp)
         np_files.append(np_fp)
     return np_files
+
+
+def score_rmse(y_true, y_pred):
+    return mean_squared_error(y_true, y_pred, squared=False)
+
+
+def score_mape(y_true, y_pred):
+    return mean_absolute_percentage_error(y_true, y_pred)
+
+
+def score_rrmse(y_true, y_pred):
+    if isinstance(y_true, list):
+        y_true = np.array(y_true)
+    if isinstance(y_pred, list):
+        y_pred = np.array(y_pred)
+    num = np.sum(np.square(y_true - y_pred))
+    den = np.sum(np.square(y_pred))
+    squared_error = num/den
+    rrmse_loss = np.sqrt(squared_error)
+    return rrmse_loss
