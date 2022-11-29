@@ -116,7 +116,8 @@ class ExperimentAnalysis:
         return fig
 
     @staticmethod
-    def compute_experiment_rmse(merged_df: pd.DataFrame):
+    def compute_experiment_rmse(merged_df: pd.DataFrame,
+                                trim_negatives: bool = True):
         """Compute RMSE results for a single experiment."""
         cols = [c for c in merged_df.columns if "y_day_" in c and "_aligned" in c]
         rmse = dict()
@@ -126,6 +127,8 @@ class ExperimentAnalysis:
             df = merged_df[["m3", col]].dropna(how="any")
             actual = df["m3"].values
             predicted = df[col].values
+            if trim_negatives:
+                predicted = np.where(predicted < 0, 0, predicted)
             score = mean_squared_error(actual, predicted, squared=False)
             rmse[f"rmse_{day}day"] = score
             all_actual += list(actual)
@@ -134,12 +137,12 @@ class ExperimentAnalysis:
         rmse["rmse_total"] = mean_squared_error(all_actual, all_pred, squared=False)
         return rmse
 
-    def compute_rmse_results(self):
+    def compute_rmse_results(self, trim_negatives: bool = True):
         """Save a CSV of all experiment RMSE results."""
         experiment_results = self.experiments.copy()
         for experiment_id in tqdm(self.experiments.index):
             merged = self.merge_pred_and_truth(experiment_id)
-            rmse = self.compute_experiment_rmse(merged)
+            rmse = self.compute_experiment_rmse(merged, trim_negatives=trim_negatives)
             for col, value in rmse.items():
                 if col not in experiment_results.columns:
                     experiment_results[col] = np.nan
@@ -220,7 +223,7 @@ class ExperimentAnalysis:
         n_plots = len(gages)
         fig, axes = plt.subplots(n_plots, figsize=(6, 5*n_plots))
         if n_plots == 1:
-            axes = [axes]
+            axfes = [axes]
         for i, gage in enumerate(gages):
             ax = axes[i]
             gage_subset = subset[subset["gages"] == gage]
