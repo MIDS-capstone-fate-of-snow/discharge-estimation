@@ -97,7 +97,7 @@ class ExperimentAnalysis:
 
     @staticmethod
     def plot_pred_vs_true(merged_df: pd.DataFrame, gage: str,
-                          days: list = (1, 7, 14)):
+                          days: list = (1, 7, 14), trim_negatives: bool = True):
         """Plot predicted discharge values against true values."""
         n_rows = len(days)
         fig, axes = plt.subplots(n_rows, 1, figsize=(8, n_rows*4), dpi=200)
@@ -105,6 +105,9 @@ class ExperimentAnalysis:
             axes = np.array(axes)
         plot_df = merged_df.reset_index().copy()
         plot_df = plot_df[plot_df["gage"] == gage].sort_values(by=["date"])
+        if trim_negatives:
+            pred_cols = [c for c in plot_df.columns if "y_day_" in c and "_aligned" in c]
+            plot_df[pred_cols] = np.where(plot_df[pred_cols] < 0, 0, plot_df[pred_cols])
         for day, ax in zip(days, axes.flatten()):
             col_name = f"y_day_{day}_aligned"
             plot_df = plot_df.dropna(subset=[col_name])
