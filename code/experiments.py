@@ -159,6 +159,8 @@ class Experiment:
         return df
 
     def get_test_set(self, day: int = 1):
+        # Get the date range for the max prediction:
+
         # TODO: Only have these predictions for LSTM currently.
         gage = "11402000"
 
@@ -183,7 +185,7 @@ class Experiment:
         lstm_pred = lstm_pred.set_index("pred_date")[col]
         lstm_pred.name = "lstm_pred"
         # TODO: confirm with Zixi logic for shifting dates:
-        lstm_pred = lstm_pred.shift(day).dropna()
+        lstm_pred = lstm_pred.shift(day + 28).dropna()
 
         test_set = pd.concat([y, pred, lstm_pred], axis=1).dropna()
 
@@ -193,11 +195,18 @@ class Experiment:
 
         return test_set
 
-    def plot_test_pred_vs_lstm(self, day: int = 1, figsize=(14, 4), dpi=150):
+    def plot_test_pred_vs_lstm(self, day: int = 1, figsize=(14, 4), dpi=150,
+                               max_days: int = 14):
+
+        # Get the dates for the max day window for reference:
+        reference_test_set = self.get_test_set(max_days)
+        index = reference_test_set.index
+
         # TODO: Only have these predictions for LSTM currently.
         gage = "11402000"
 
-        test_set = self.get_test_set(day)
+        test_set = self.get_test_set(day).loc[index]
+        print(len(test_set))
 
         fig, axes = plt.subplots(1, 2, figsize=figsize, dpi=dpi)
         ax = axes[1]
