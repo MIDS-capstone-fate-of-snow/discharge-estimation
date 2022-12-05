@@ -8,12 +8,14 @@ import random
 import warnings
 import yaml
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 
 from tif_files import TifFile
 from utils import convert_datetime, expected_image_dates, extract_filename_data, open_npy_file, open_swe_file, \
-    pixel_mean_std
+    open_y_data, pixel_mean_std
 
 DIR, FILENAME = os.path.split(__file__)
 DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
@@ -41,6 +43,8 @@ class CNNSeqDataset:
                  test_start: str = "2016_01_01",
                  use_masks: bool = True,
                  gages: list = None,
+                 sample_z_score: float = None,
+                 sample_weight: float = None,
                  random_seed: int = 42,
                  shuffle_train: bool = True):
         """Construct image training dataset for training CNN sequence models.
@@ -198,6 +202,14 @@ class CNNSeqDataset:
         # The order of features for keras datasets for model training:
         # TODO: make this configurable.
         self.keras_features = ("dem", "temp", "precip", "swe", "et")
+
+        # Calculate sample weights based on z-score:
+        self.sample_z_score = sample_z_score
+        self.sample_weight = sample_weight
+        if self.sample_z_score is not None and self.sample_weight is not None:
+            self.calculate_sample_weights(self.sample_z_score, self.sample_weight)
+        else:
+            self.sample_weights = None
 
     @property
     def saved_img_norm(self):
@@ -433,7 +445,12 @@ class CNNSeqDataset:
             fps = self.get_required_filepaths(y_date, gage)
             for retry_count in range(1, 11, 1):
                 try:
-                    yield self.filepaths_to_data(fps)
+                    data = self.filepaths_to_data(fps)
+                    if self.sample_weights is None:
+                        data["sample_weight"] = 1
+                    else:
+                        data["sample_weight"] = self.sample_weights.loc[gage, y_date]["sample_weight"]
+                    yield data
                     break
                 except OSError:
                     if retry_count == 10:
@@ -449,7 +466,7 @@ class CNNSeqDataset:
                     break
                 except OSError:
                     if retry_count == 10:
-                        warnings.warn(f"OSError in train_data_generator (tried 10 times): gage={gage}, y_date={y_date}")
+                        warnings.warn(f"OSError in val_data_generator (tried 10 times): gage={gage}, y_date={y_date}")
                     continue
 
     def test_data_generator(self):
@@ -461,7 +478,7 @@ class CNNSeqDataset:
                     break
                 except OSError:
                     if retry_count == 10:
-                        warnings.warn(f"OSError in train_data_generator (tried 10 times): gage={gage}, y_date={y_date}")
+                        warnings.warn(f"OSError in test_data_generator (tried 10 times): gage={gage}, y_date={y_date}")
                     continue
 
     def keras_train_gen(self, debug: bool = False):
@@ -486,7 +503,9 @@ class CNNSeqDataset:
             # Yield data in format required by tensorflow:
             X = [sample[ft] for ft in self.keras_features]
             X = tuple([np.expand_dims(np.expand_dims(x, -1), 0) for x in X])
-            yield X, np.expand_dims(sample["y"], 0)
+            y = np.expand_dims(sample["y"], 0)
+            sample_weight = np.array([sample["sample_weight"]])
+            yield X, y, sample_weight
             i += 1
 
     def keras_val_gen(self, debug: bool = False):
@@ -538,3 +557,60 @@ class CNNSeqDataset:
             X = tuple([np.expand_dims(np.expand_dims(x, -1), 0) for x in X])
             yield X, np.expand_dims(sample["y"], 0)
             i += 1
+
+    def calculate_sample_weights(self, z: float, weight: float):
+        y_df = open_y_data()
+        train_y = y_df[(y_df["date"] >= self.min_date) & (y_df["date"] <= self.train_end)].copy()
+        mu = train_y.groupby(["gage"])[self.y_col].transform("mean")
+        std = train_y.groupby(["gage"])[self.y_col].transform("std")
+        zscores = (train_y[self.y_col] - mu) / std
+        train_y["sample_weight"] = np.where(zscores > z, weight, 1)
+        train_y["weighted"] = np.where(zscores > z, True, False)
+        self.sample_weights = train_y.set_index(["gage", "date"])[[self.y_col, "sample_weight", "weighted"]]
+
+    def plot_sample_weights(self, gage: str):
+        sw = self.sample_weights.loc[gage].copy()
+        fig, ax = plt.subplots()
+        sw["plot_not_weighted"] = np.where(~sw["weighted"], sw[self.y_col], np.nan)
+        sw["plot_weighted"] = np.where(sw["weighted"], sw[self.y_col], np.nan)
+        ax.plot(sw["plot_not_weighted"], color="b")
+        ax.plot(sw["plot_weighted"], color="r")
+        n_weighted = sw["weighted"].astype(int).sum()
+        n_not_weighted = len(sw)
+        ax.set_title(f"{gage} (z={self.sample_z_score}, weight={self.sample_weight}): {n_weighted} of {n_not_weighted}")
+        return fig
+
+    def keras_datasets(self):
+        if not self.y_seq:
+            num_y = 1
+        else:
+            num_y = self.n_d_y
+        val_test_output_signature = (
+            (  # X-variables:
+                tf.TensorSpec(shape=(None, 1, None, None, 1), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, self.n_d_temp, None, None, 1), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, self.n_d_precip, None, None, 1), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, len(self.swe_d_rel), None, None, 1), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, self.n_d_et // 8, None, None, 1), dtype=tf.float32),
+            ),
+            # y-variable:
+            tf.TensorSpec(shape=(1, num_y), dtype=tf.float32),
+        )
+        train_output_signature = (
+            (  # X-variables:
+                tf.TensorSpec(shape=(None, 1, None, None, 1), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, self.n_d_temp, None, None, 1), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, self.n_d_precip, None, None, 1), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, len(self.swe_d_rel), None, None, 1), dtype=tf.float32),
+                tf.TensorSpec(shape=(None, self.n_d_et // 8, None, None, 1), dtype=tf.float32),
+            ),
+            # y-variable:
+            tf.TensorSpec(shape=(1, num_y), dtype=tf.float32),
+            # Sample weight:
+            tf.TensorSpec(shape=(1,), dtype=tf.float32),
+        )
+
+        train_data = tf.data.Dataset.from_generator(self.keras_train_gen, output_signature=train_output_signature)
+        val_data = tf.data.Dataset.from_generator(self.keras_val_gen, output_signature=val_test_output_signature)
+        test_data = tf.data.Dataset.from_generator(self.keras_test_gen, output_signature=val_test_output_signature)
+        return dict(train_data=train_data, val_data=val_data, test_data=test_data)
