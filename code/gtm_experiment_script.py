@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import datasets, layers, models  # NOQA
 import yaml
 
 from cnn_dataset import CNNSeqDataset
@@ -50,6 +49,10 @@ class GTMExperiment:
             dropout=0.5,
             pooling="avg",
             cnn_activation="relu",
+
+            # Sample weighting params:
+            sample_z_score=None,
+            sample_weight=None,
 
             # Model training params:
             epochs=5,
@@ -119,6 +122,8 @@ class GTMExperiment:
             random_seed=42,
             shuffle_train=self.params["shuffle_train"],
             gages=self.params["gages"],
+            sample_z_score=self.params["sample_z_score"],
+            sample_weight=self.params["sample_weight"],
         )
         print(f"Num training examples = {len(self.cnn_data.train_pairs)}")
 
@@ -128,24 +133,9 @@ class GTMExperiment:
         fp = os.path.join(EXPERIMENT_DIR, f"{experiment_id}__model.png")
         keras.utils.plot_model(model, fp, show_shapes=True)
 
-        # Create the datasets:
-        output_signature = (
-            (  # X-variables:
-                tf.TensorSpec(shape=(None, 1, None, None, 1), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, self.params["n_days_temp"], None, None, 1), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, self.params["n_days_precip"], None, None, 1), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, self.params["n_swe"], None, None, 1), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, self.params["n_et"], None, None, 1), dtype=tf.float32),
-            ),
-            # y-variable:
-            tf.TensorSpec(shape=(1, self.params["n_days_y"]), dtype=tf.float32)
-        )
-        self.train_data = tf.data.Dataset.from_generator(self.keras_train_gen, output_signature=output_signature)
-        self.val_data = tf.data.Dataset.from_generator(self.keras_train_gen, output_signature=output_signature)
-        self.test_data = tf.data.Dataset.from_generator(self.keras_train_gen, output_signature=output_signature)
-
         # Train the model:
         experiment["train_start_time"] = datetime.datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
+        datasets = self.cnn_data.keras_datasets()
 
         tensorboard_callback = tf.keras.callbacks.TensorBoard(
             log_dir=TF_LOG_DIR,
@@ -172,16 +162,16 @@ class GTMExperiment:
             save_freq="epoch",
             options=None,
             initial_value_threshold=None,
-            )
+        )
 
         train_steps_per_epoch = len(self.cnn_data.train_pairs)
         n_val_steps = len(self.cnn_data.val_pairs)
         optimizer = self.params["opt"](self.params["learning_rate"])
         model.compile(optimizer=optimizer, loss=self.params["loss"])
         model.fit(
-            self.train_data, epochs=self.params["epochs"], batch_size=1,
+            datasets["train_data"], epochs=self.params["epochs"], batch_size=1,
             steps_per_epoch=train_steps_per_epoch,
-            validation_data=self.val_data, validation_steps=n_val_steps,
+            validation_data=datasets["val_data"], validation_steps=n_val_steps,
             validation_batch_size=1, validation_freq=1,
             callbacks=[tensorboard_callback, model_save_callback]
         )
@@ -192,7 +182,7 @@ class GTMExperiment:
         # Save the validation predictions:
         experiment["val_pred_start_time"] = datetime.datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
         n_val_steps = len(self.cnn_data.val_pairs)
-        val_pred = model.predict(self.val_data, steps=n_val_steps)
+        val_pred = model.predict(datasets["val_data"], steps=n_val_steps)
         columns = [f"y_day_{y+1}" for y in range(self.params["n_days_y"])]
         df = pd.DataFrame(val_pred, columns=columns)
         df["gage"] = [t[0] for t in self.cnn_data.val_pairs]
@@ -206,7 +196,7 @@ class GTMExperiment:
         # Save the test predictions:
         experiment["test_pred_start_time"] = datetime.datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
         n_test_steps = len(self.cnn_data.test_pairs)
-        test_pred = model.predict(self.test_data, steps=n_test_steps)
+        test_pred = model.predict(datasets["test_data"], steps=n_test_steps)
         columns = [f"y_day_{y+1}" for y in range(self.params["n_days_y"])]
         df = pd.DataFrame(test_pred, columns=columns)
         df["gage"] = [t[0] for t in self.cnn_data.test_pairs]
@@ -237,81 +227,6 @@ class GTMExperiment:
 
         print(f"Finished experiment id = '{experiment_id}'")
 
-    def keras_train_gen(self, debug: bool = False):
-        """Construct Keras-compatible train generator."""
-        train_data_gen = self.cnn_data.train_data_generator()
-        i = 0
-        while True:
-
-            # Generate the training sample dict, making the generator infinite:
-            try:
-                sample = next(train_data_gen)
-            except StopIteration:
-                # Reset the generator:
-                train_data_gen = self.cnn_data.train_data_generator()
-                i = 0
-                sample = next(train_data_gen)
-
-            # Print debug info:
-            if debug:
-                print(f"Sample {i}, {sample['debug_data']}")
-
-            # Yield data in format required by tensorflow:
-            X = [sample[ft] for ft in self.features]
-            X = tuple([np.expand_dims(np.expand_dims(x, -1), 0) for x in X])
-            yield X, np.expand_dims(sample["y"], 0)
-            i += 1
-
-    def keras_val_gen(self, debug: bool = False):
-        """Construct Keras-compatible validation generator."""
-        data_gen = self.cnn_data.val_data_generator()
-        i = 0
-        while True:
-
-            # Generate the training sample dict, making the generator infinite:
-            try:
-                sample = next(data_gen)
-            except StopIteration:
-                # Reset the generator:
-                data_gen = self.cnn_data.val_data_generator()
-                i = 0
-                sample = next(data_gen)
-
-            # Print debug info:
-            if debug:
-                print(f"Sample {i}, {sample['debug_data']}")
-
-            # Yield data in format required by tensorflow:
-            X = [sample[ft] for ft in self.features]
-            X = tuple([np.expand_dims(np.expand_dims(x, -1), 0) for x in X])
-            yield X, np.expand_dims(sample["y"], 0)
-            i += 1
-
-    def keras_test_gen(self, debug: bool = False):
-        """Construct Keras-compatible test generator."""
-        data_gen = self.cnn_data.test_data_generator()
-        i = 0
-        while True:
-
-            # Generate the training sample dict, making the generator infinite:
-            try:
-                sample = next(data_gen)
-            except StopIteration:
-                # Reset the generator:
-                data_gen = self.cnn_data.test_data_generator()
-                i = 0
-                sample = next(data_gen)
-
-            # Print debug info:
-            if debug:
-                print(f"Sample {i}, {sample['debug_data']}")
-
-            # Yield data in format required by tensorflow:
-            X = [sample[ft] for ft in self.features]
-            X = tuple([np.expand_dims(np.expand_dims(x, -1), 0) for x in X])
-            yield X, np.expand_dims(sample["y"], 0)
-            i += 1
-
     def get_gaptransmax_model(self):
         # Create the model architecture:
         architecture = GAPTransMaxArchitecture()
@@ -340,32 +255,49 @@ class GTMExperiment:
 
 if __name__ == "__main__":
 
-    exp_params = dict(
-        gages=['11402000'],  # '11266500', '11402000', '11189500', '11318500', '11202710', '11208000', '11185500'],
-        y_col="m3",  # "m3_per_area_km", "m3_per_area_miles"
-        n_days_precip=1,
-        n_days_temp=21,
-        n_days_et=8,
-        swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
-        n_days_y=14,
-        y_seq=True,
-        use_masks=True,
-        shuffle_train=True,
+    for sz, sw in [
+        (0.5, 5),
+        (0.5, 2),
+        (1, 10),
+        (1, 5),
+        (1, 2),
+        (2, 10),
+        (2, 5),
+        (2, 2),
+        (3, 10),
+        (3, 5),
+        (3, 2),
+    ]:
+        exp_params = dict(
+            gages=['11402000', '11189500', '11318500', '11266500', '11202710'],  # '11208000', '11185500'
+            y_col="m3",  # "m3_per_area_km", "m3_per_area_miles"
+            n_days_precip=1,
+            n_days_temp=21,
+            n_days_et=8,
+            swe_days_relative=[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84],
+            n_days_y=14,
+            y_seq=True,
+            use_masks=True,
+            shuffle_train=True,
 
-        # Model architecture params:
-        enc_embed_dim=64, enc_dense_dim=48, enc_num_heads=16,
-        dec_embed_dim=64, dec_dense_dim=48, dec_num_heads=16,
-        kernal=(2, 2), strides=(1, 1),
-        hidden_dim=64,
-        dropout=0.5,
-        pooling="avg",
-        cnn_activation="relu",
+            # Model architecture params:
+            enc_embed_dim=24, enc_dense_dim=48, enc_num_heads=4,
+            dec_embed_dim=24, dec_dense_dim=48, dec_num_heads=4,
+            kernal=(2, 2), strides=(1, 1),
+            hidden_dim=24,
+            dropout=0.5,
+            pooling="avg",
+            cnn_activation="relu",
 
-        # Model training params:
-        epochs=5,
-        learning_rate=0.0001,
-        opt=keras.optimizers.Adam,
-        loss="mean_squared_error",
-        tf_board_update_freq=100,
-    )
-    exp = GTMExperiment(**exp_params)
+            # Sample weighting params:
+            sample_z_score=sz,
+            sample_weight=sw,
+
+            # Model training params:
+            epochs=5,
+            learning_rate=0.0001,
+            opt=keras.optimizers.Adam,
+            loss="mean_squared_error",
+            tf_board_update_freq=100,
+        )
+        exp = GTMExperiment(**exp_params)
