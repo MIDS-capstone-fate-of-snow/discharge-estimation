@@ -5,7 +5,6 @@ import json
 import os
 import uuid
 
-import numpy as np
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
@@ -127,7 +126,6 @@ class GTMExperiment:
         )
         print(f"Num training examples = {len(self.cnn_data.train_pairs)}")
 
-        assert len(self.params["gages"]) == 1
         experiment["architecture"] = "GAPTransMaxArchitecture"
         model = self.get_gaptransmax_model()
         fp = os.path.join(EXPERIMENT_DIR, f"{experiment_id}__model.png")
