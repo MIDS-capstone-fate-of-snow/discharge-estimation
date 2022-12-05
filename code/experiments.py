@@ -9,15 +9,13 @@ from keras.utils import custom_object_scope
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 import yaml
 
 from cnn_models import TransformerDecoder, TransformerEncoder
 from cnn_dataset import CNNSeqDataset
 from utils import open_y_data, score_mape, score_rmse, score_rrmse
 
-# DIR, FILENAME = os.path.split(__file__)
-DIR = os.getcwd()
+DIR, FILENAME = os.path.split(__file__)
 DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
 TRAIN_DIR = os.path.join(DATA_DIR, "training_data")
 EXPERIMENT_DIR = os.path.join(os.path.dirname(DIR), "experiments")
@@ -106,26 +104,19 @@ class Experiment:
             shuffle_train=self.metadata["shuffle_train"],
         )
         # Create the datasets:
-        output_signature = (
-            (  # X-variables:
-                tf.TensorSpec(shape=(None, 1, None, None, 1), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, self.metadata["n_days_temp"], None, None, 1), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, self.metadata["n_days_precip"], None, None, 1), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, self.metadata["n_swe"], None, None, 1), dtype=tf.float32),
-                tf.TensorSpec(shape=(None, self.metadata["n_et"], None, None, 1), dtype=tf.float32),
-            ),
-            # y-variable:
-            tf.TensorSpec(shape=(1, self.metadata["n_days_y"]), dtype=tf.float32)
-        )
-        self.train_data = tf.data.Dataset.from_generator(
-            self.cnn_dataset.keras_train_gen, output_signature=output_signature)
-        self.val_data = tf.data.Dataset.from_generator(
-            self.cnn_dataset.keras_train_gen, output_signature=output_signature)
-        self.test_data = tf.data.Dataset.from_generator(
-            self.cnn_dataset.keras_train_gen, output_signature=output_signature)
+        keras_datasets = self.cnn_dataset.keras_datasets()
+        self.train_data = keras_datasets["train_data"]
+        self.val_data = keras_datasets["val_data"]
+        self.test_data = keras_datasets["test_data"]
 
     def get_predictions(self, predict: str = "test",
                         epoch: int = None):
+        """Make predictions using the save model.
+
+        Args:
+            predict: what to predict; either 'val' or 'test'.
+            epoch: optional epoch's model to load, else just use final model.
+        """
         try:
             return self.predictions[epoch][predict]
         except KeyError:
