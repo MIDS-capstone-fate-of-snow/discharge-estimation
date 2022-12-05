@@ -11,20 +11,25 @@ DIR, FILENAME = os.path.split(__file__)
 DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
 
 
+# @tf.keras.utils.register_keras_serializable()
 class TransformerEncoder(layers.Layer):
-    def __init__(self, embed_dim, dense_dim, num_heads, **kwargs):
+    def __init__(self, embed_dim, dense_dim, num_heads, attention_config=None,
+                 dense_proj_config=None, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
         self.dense_dim = dense_dim
         self.num_heads = num_heads
-        self.attention = layers.MultiHeadAttention(
-            num_heads=num_heads, key_dim=embed_dim)
-        self.dense_proj = keras.Sequential(
-            [
+        if attention_config is None:
+            self.attention = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
+        else:
+            self.attention = layers.MultiHeadAttention.from_config(attention_config)
+        if dense_proj_config is None:
+            self.dense_proj = keras.Sequential([
                 layers.Dense(dense_dim, activation="relu"),
                 layers.Dense(embed_dim),
-            ]
-        )
+            ])
+        else:
+            self.dense_proj = keras.Sequential.from_config(dense_proj_config)
         self.layernorm_1 = layers.LayerNormalization()
         self.layernorm_2 = layers.LayerNormalization()
 
@@ -43,26 +48,40 @@ class TransformerEncoder(layers.Layer):
             "embed_dim": self.embed_dim,
             "num_heads": self.num_heads,
             "dense_dim": self.dense_dim,
+            "attention_config": self.attention.get_config(),
+            "dense_proj_config": self.dense_proj.get_config(),
         })
         return config
 
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
+
+# @tf.keras.utils.register_keras_serializable()
 class TransformerDecoder(layers.Layer):
-    def __init__(self, embed_dim, dense_dim, num_heads, **kwargs):
+    def __init__(self, embed_dim, dense_dim, num_heads,
+                 attention_config1=None, attention_config2=None,
+                 dense_proj_config=None, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
         self.dense_dim = dense_dim
         self.num_heads = num_heads
-        self.attention_1 = layers.MultiHeadAttention(
-            num_heads=num_heads, key_dim=embed_dim)
-        self.attention_2 = layers.MultiHeadAttention(
-            num_heads=num_heads, key_dim=embed_dim)
-        self.dense_proj = keras.Sequential(
-            [
+        if attention_config1 is None:
+            self.attention_1 = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
+        else:
+            self.attention_1 = layers.MultiHeadAttention.from_config(attention_config1)
+        if attention_config2 is None:
+            self.attention_2 = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
+        else:
+            self.attention_2 = layers.MultiHeadAttention.from_config(attention_config2)
+        if dense_proj_config is None:
+            self.dense_proj = keras.Sequential([
                 layers.Dense(dense_dim, activation="relu"),
                 layers.Dense(embed_dim),
-            ]
-        )
+            ])
+        else:
+            self.dense_proj = keras.Sequential.from_config(dense_proj_config)
         self.layernorm_1 = layers.LayerNormalization()
         self.layernorm_2 = layers.LayerNormalization()
         self.layernorm_3 = layers.LayerNormalization()
@@ -74,8 +93,16 @@ class TransformerDecoder(layers.Layer):
             "embed_dim": self.embed_dim,
             "num_heads": self.num_heads,
             "dense_dim": self.dense_dim,
+            "attention_config1": self.attention_1.get_config(),
+            "attention_config2": self.attention_2.get_config(),
+            "dense_proj_config": self.dense_proj.get_config(),
+
         })
         return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
     @staticmethod
     def get_causal_attention_mask(inputs):
@@ -565,7 +592,8 @@ class SpaceTimeTransformerArchitecture:
         encoder_outputs = layers.Dropout(dropout, name="time_transformer_dropout")(encoder_outputs)
 
         # Swap the time-space axis:
-        dim_swap = keras.layers.Permute((2, 1), input_shape=encoder_outputs.shape, name="spacetime_swap")(encoder_outputs)
+        dim_swap = keras.layers.Permute(
+            (2, 1), input_shape=encoder_outputs.shape, name="spacetime_swap")(encoder_outputs)
 
         # Transformer encoder space dimension:
         space_encoder_outputs = TransformerEncoder(  # NOQA
