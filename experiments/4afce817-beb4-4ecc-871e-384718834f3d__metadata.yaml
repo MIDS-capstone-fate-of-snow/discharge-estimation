@@ -1,0 +1,51 @@
+architecture: GAPTransMaxArchitecture
+cnn_activation: relu
+dec_dense_dim: '24'
+dec_embed_dim: '8'
+dec_num_heads: '4'
+dem_kernal: (5, 5)
+dem_strides: (1, 1)
+dropout: '0.5'
+enc_dense_dim: '24'
+enc_embed_dim: '8'
+enc_num_heads: '4'
+end_time: '2022_12_05__02_00_38'
+epochs: '1'
+et_kernal: (4, 4)
+et_strides: (1, 1)
+gages: '[''11402000'']'
+hidden_dim: '8'
+id: 4afce817-beb4-4ecc-871e-384718834f3d
+kernal: (2, 2)
+learning_rate: '0.0001'
+loss: mean_squared_error
+n_days_et: '32'
+n_days_precip: '28'
+n_days_temp: '28'
+n_days_y: '1'
+n_et: '4'
+n_swe: '12'
+opt: <class 'keras.optimizers.optimizer_experimental.adam.Adam'>
+pooling: flatten
+precip_kernal: (2, 2)
+precip_strides: (1, 1)
+sample_weight: '10'
+sample_z_score: '0.5'
+shuffle_train: 'True'
+start_time: '2022_12_05__01_55_38'
+strides: (1, 1)
+swe_days_relative: '[7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84]'
+swe_kernal: (5, 5)
+swe_strides: (1, 1)
+temp_kernal: (2, 2)
+temp_strides: (1, 1)
+test_pred_end_time: '2022_12_05__02_00_25'
+test_pred_start_time: '2022_12_05__02_00_01'
+tf_board_update_freq: '100'
+train_end_time: '2022_12_05__01_59_05'
+train_start_time: '2022_12_05__01_56_29'
+use_masks: 'True'
+val_pred_end_time: '2022_12_05__02_00_01'
+val_pred_start_time: '2022_12_05__01_59_39'
+y_col: m3
+y_seq: 'False'
