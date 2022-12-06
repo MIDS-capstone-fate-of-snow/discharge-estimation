@@ -359,3 +359,42 @@ class ExperimentAnalysis:
         all_results.reset_index().to_csv(
             os.path.join(DATA_DIR, f"best_{scoring}_full_results.csv"), encoding="utf-8", index=False)
         return all_results
+
+    @staticmethod
+    def lstm_results(day: int):
+        fp = os.path.join(DATA_DIR, "LSTM_11402000_test_pred.csv")
+        lstm_pred = pd.read_csv(fp)
+        lstm_pred["pred_date"] = pd.to_datetime(lstm_pred["pred_date"])
+        col = f"day{day}_pred"
+        lstm_pred = lstm_pred.set_index("pred_date")[col]
+        lstm_pred.name = "lstm_pred"
+        # TODO: confirm with Zixi logic for shifting dates:
+        lstm_pred = lstm_pred.shift(day + 28).dropna()
+        return lstm_pred
+
+    def compare_results_vs_lstm(self, scoring: str = "rmse", day: int = 1,
+                                y_col: str = "m3"):
+        fp = os.path.join(DATA_DIR, f"best_model_{scoring}_day{day}_test_pred.csv")
+        pred = pd.read_csv(fp)
+        pred["gage"] = pred["gage"].astype(str)
+        pred["date"] = pd.to_datetime(pred["date"])
+        pred = pred.rename(columns={f"y_day_{day}": "y_hat"}).set_index(["gage", "date"])
+        pred = pred.loc["11402000"]
+        lstm = self.lstm_results(day)
+        y_df = open_y_data()
+        y_df = y_df[y_df["gage"] == "11402000"].set_index("date")[y_col]
+        df = pd.concat([pred, lstm, y_df], axis=1).dropna()
+
+        results = defaultdict(list)
+        y_true = df[y_col]
+        lstm_pred = df["lstm_pred"]
+        dl_pred = df["y_hat"]
+        results["model"] = ["lstm_baseline", "deep_learning_image"]
+        results["rmse"].append(score_rmse(y_true, lstm_pred))
+        results["rmse"].append(score_rmse(y_true, dl_pred))
+        results["rrmse"].append(score_rrmse(y_true, lstm_pred))
+        results["rrmse"].append(score_rrmse(y_true, dl_pred))
+        results["mape"].append(score_mape(y_true, lstm_pred))
+        results["mape"].append(score_mape(y_true, dl_pred))
+
+        return pd.DataFrame(results)
