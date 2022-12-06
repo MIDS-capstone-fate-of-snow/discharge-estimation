@@ -220,7 +220,7 @@ class Experiment:
         rmse = score_rmse(test_set["ground_truth"], test_set["pred"])
         rrmse = score_rrmse(test_set["ground_truth"], test_set["pred"])
         mape = score_mape(test_set["ground_truth"], test_set["pred"])
-        architecture = self.metadata["architecture"]
+        architecture = self.metadata["architecture"].replace("Architecture", "")
         ax.set_title(f"{architecture} Model\nRMSE={rmse:.2f}, RRMSE={rrmse:.2f}, MAPE={mape:.2f}")
         ax.legend()
         with warnings.catch_warnings():
