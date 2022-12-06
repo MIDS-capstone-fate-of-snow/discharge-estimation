@@ -1,5 +1,6 @@
 """Code for analyzing results of neural network experiments."""
 
+from collections import defaultdict
 import os
 
 import numpy as np
@@ -8,11 +9,13 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import yaml
 
+from experiments import Experiment
 from utils import open_y_data, score_mape, score_rmse, score_rrmse
 
 pd.set_option("display.max_colwidth", 500)
 
 DIR, FILENAME = os.path.split(__file__)
+DATA_DIR = os.path.join(os.path.dirname(DIR), "data")
 EXPERIMENT_DIR = os.path.join(os.path.dirname(DIR), "experiments")
 if not os.path.exists(EXPERIMENT_DIR):
     os.mkdir(EXPERIMENT_DIR)
@@ -210,7 +213,7 @@ class ExperimentAnalysis:
                 try:
                     score = float(val_score)
                     val_scores.append(score)
-                except TypeError:
+                except (TypeError, ValueError):
                     break
             if len(val_scores):
                 epoch_scores.append((gages, exp_id, val_scores, len(val_scores), val_scores[-1]))
@@ -242,7 +245,7 @@ class ExperimentAnalysis:
         n_plots = len(gages)
         fig, axes = plt.subplots(n_plots, figsize=(6, 5*n_plots))
         if n_plots == 1:
-            axfes = [axes]
+            axes = [axes]
         for i, gage in enumerate(gages):
             ax = axes[i]
             gage_subset = subset[subset["gages"] == gage]
@@ -255,3 +258,104 @@ class ExperimentAnalysis:
             ax.legend(loc=(1.01, 0))
         plt.show()
         return subset
+
+    @staticmethod
+    def results_table(test_fp: str, day: int, y_col: str = "m3"):
+        """Compute full results table from filepath to a CSV of predictions."""
+        df = pd.read_csv(test_fp)
+        df["gage"] = df["gage"].astype(str)
+        df["date"] = pd.to_datetime(df["date"])
+        pred_col = f"y_day_{day}"
+        assert pred_col in df.columns
+        pred = df.set_index(["gage", "date"])[[pred_col]]
+
+        y_df = open_y_data()
+        true = y_df.set_index(["gage", "date"])[y_col]
+
+        df = pd.concat([pred, true], axis=1).dropna().reset_index()
+
+        results = defaultdict(list)
+        for gage in df["gage"].unique():
+            results["gage"].append(gage)
+            subset = df[df["gage"] == gage]
+            y = subset[y_col]
+            y_hat = subset[pred_col]
+            results["true_mu"].append(y.mean())
+            results["true_std"].append(y.std())
+            results["pred_mu"].append(y_hat.mean())
+            results["pred_std"].append(y_hat.std())
+            results["rmse"].append(score_rmse(y, y_hat))
+            results["mape"].append(score_mape(y, y_hat))
+            results["rrmse"].append(score_rrmse(y, y_hat))
+
+        return pd.DataFrame(results)
+
+    def save_best_predictions(self, days: list = (1, 7, 14),
+                              scoring: str = "rmse", gages: list = None):
+        if gages is None:
+            gages = ['11402000', '11189500', '11318500', '11266500', '11202710']
+        df = self.results
+        df = df[df["gages"] == str(gages)]
+        experiments = defaultdict(dict)
+        for day in days:
+            col = f"{scoring}_{day}day"
+            subset = df[df[col].notna()].sort_values(by=[col], ascending=True)
+            expt_id = subset.iloc[0]["id"]
+            expt = Experiment(expt_id)
+            experiments[day]["experiment"] = expt
+            experiments[day]["experiment_id"] = expt_id
+
+            # Load the best scoring model:
+            # Try to load best checkpoint using val scores if available:
+            try:
+                scores = self.get_validation_epoch_scores(expt_id)["scores"].iloc[0]
+                best_epoch = -1
+                best_score = np.inf
+                for epoch, score in enumerate(scores, 1):
+                    if score < best_score:
+                        best_score = score
+                        best_epoch = epoch
+                last_epoch = len(scores)
+                if best_epoch == last_epoch:
+                    best_epoch = None
+            except:  # NOQA
+                best_epoch = None
+
+            # Load/Make predictions:
+            if best_epoch is None:
+                pred = expt.load_predictions("test")
+            else:
+                pred = expt.get_predictions(predict="test", epoch=best_epoch)
+
+            # Add metadata:
+            pred["expt_id"] = expt_id
+            pred["set"] = "test"
+
+            # Save results to CSV:
+            fp = os.path.join(DATA_DIR, f"best_model_{scoring}_day{day}_test_pred.csv")
+            experiments[day]["filepath"] = fp
+            pred.to_csv(fp, encoding="utf-8", index=False)
+            print(f"Predictions saved to: {fp}")
+
+        return experiments
+
+    def save_full_results(self, days: list = (1, 7, 14),
+                          scoring: str = "rmse", gages: list = None):
+        experiments = self.save_best_predictions(days=days, scoring=scoring, gages=gages)
+        results_dict = dict()
+        for day, values in experiments.items():
+            fp = values["filepath"]
+            results_dict[day] = self.results_table(fp, day=day)
+        all_results = results_dict[1].set_index("gage")
+        day_cols = "pred_mu	pred_std	rmse	mape	rrmse".split()
+        rename = {c: f"1day_{c}" for c in day_cols}
+        all_results = all_results.rename(columns=rename)
+        for day in (7, 14):
+            res_df = results_dict[day].set_index("gage")
+            rename = {c: f"{day}day_{c}" for c in day_cols}
+            res_df = res_df.rename(columns=rename)
+            all_results = pd.merge(all_results, res_df[rename.values()],
+                                   left_index=True, right_index=True)
+        all_results.reset_index().to_csv(
+            os.path.join(DATA_DIR, f"best_{scoring}_full_results.csv"), encoding="utf-8", index=False)
+        return all_results

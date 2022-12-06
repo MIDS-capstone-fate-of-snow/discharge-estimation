@@ -149,7 +149,7 @@ class Experiment:
         df["gage"] = df["gage"].astype(str)
         return df
 
-    def get_test_set(self, day: int = 1):
+    def get_test_set(self, day: int = None):
         # Get the date range for the max prediction:
 
         # TODO: Only have these predictions for LSTM currently.
@@ -158,7 +158,17 @@ class Experiment:
         # Load the model predictions:
         pred = self.load_predictions("test")
         pred["date"] = pd.to_datetime(pred["date"])  # NOQA
-        col = f"y_day_{day}"
+        available_cols = [c for c in pred.columns if c.startswith("y_day_")]
+        max_day_available = max([int(c.replace("y_day_", "")) for c in available_cols])
+        if (day is None) or (max_day_available < day):
+            if isinstance(day, int):
+                warnings.warn(f"Requested predictions for day {day}, but latest available is "
+                              f"{max_day_available}. Returning those instead.")
+            day = max_day_available
+            col = f"y_day_{max_day_available}"
+        else:
+            col = f"y_day_{day}"
+
         pred = pred[pred["gage"] == gage].set_index("date")[col]
         pred.name = "pred"
         pred = pred.shift(day-1).dropna()
@@ -169,14 +179,7 @@ class Experiment:
         y.name = "ground_truth"
 
         # Get the LSTM predictions:
-        lstm_path = os.path.join(DATA_DIR, "LSTM_11402000_test_pred.csv")
-        lstm_pred = pd.read_csv(lstm_path)
-        lstm_pred["pred_date"] = pd.to_datetime(lstm_pred["pred_date"])
-        col = f"day{day}_pred"
-        lstm_pred = lstm_pred.set_index("pred_date")[col]
-        lstm_pred.name = "lstm_pred"
-        # TODO: confirm with Zixi logic for shifting dates:
-        lstm_pred = lstm_pred.shift(day + 28).dropna()
+        lstm_pred = self.lstm_results(day)
 
         test_set = pd.concat([y, pred, lstm_pred], axis=1).dropna()
 
@@ -186,11 +189,22 @@ class Experiment:
 
         return test_set
 
-    def plot_test_pred_vs_lstm(self, day: int = 1, figsize=(14, 4), dpi=150,
-                               max_days: int = 14):
+    @staticmethod
+    def lstm_results(day: int):
+        fp = os.path.join(DATA_DIR, "LSTM_11402000_test_pred.csv")
+        lstm_pred = pd.read_csv(fp)
+        lstm_pred["pred_date"] = pd.to_datetime(lstm_pred["pred_date"])
+        col = f"day{day}_pred"
+        lstm_pred = lstm_pred.set_index("pred_date")[col]
+        lstm_pred.name = "lstm_pred"
+        # TODO: confirm with Zixi logic for shifting dates:
+        lstm_pred = lstm_pred.shift(day + 28).dropna()
+        return lstm_pred
+
+    def plot_test_pred_vs_lstm(self, day: int = 1, figsize=(14, 4), dpi=150):
 
         # Get the dates for the max day window for reference:
-        reference_test_set = self.get_test_set(max_days)
+        reference_test_set = self.get_test_set(None)
         index = reference_test_set.index
 
         # TODO: Only have these predictions for LSTM currently.
