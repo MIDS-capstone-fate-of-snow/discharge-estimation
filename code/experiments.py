@@ -220,7 +220,8 @@ class Experiment:
         rmse = score_rmse(test_set["ground_truth"], test_set["pred"])
         rrmse = score_rrmse(test_set["ground_truth"], test_set["pred"])
         mape = score_mape(test_set["ground_truth"], test_set["pred"])
-        ax.set_title(f"Deep Learning Image Model\nRMSE={rmse:.2f}, RRMSE={rrmse:.2f}, MAPE={mape:.2f}")
+        architecture = self.metadata["architecture"]
+        ax.set_title(f"{architecture} Model\nRMSE={rmse:.2f}, RRMSE={rrmse:.2f}, MAPE={mape:.2f}")
         ax.legend()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -234,7 +235,7 @@ class Experiment:
         rmse = score_rmse(test_set["ground_truth"], test_set["lstm_pred"])
         rrmse = score_rrmse(test_set["ground_truth"], test_set["lstm_pred"])
         mape = score_mape(test_set["ground_truth"], test_set["lstm_pred"])
-        ax.set_title(f"LSTM Model\nRMSE={rmse:.2f}, RRMSE={rrmse:.2f}, MAPE={mape:.2f}")
+        ax.set_title(f"Baseline LSTM Model\nRMSE={rmse:.2f}, RRMSE={rrmse:.2f}, MAPE={mape:.2f}")
         ax.legend()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
