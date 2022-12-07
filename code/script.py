@@ -113,6 +113,7 @@ class GTMExperiment:
             n_d_et=self.params["n_days_et"],
             swe_d_rel=self.params["swe_days_relative"],
             n_d_y=self.params["n_days_y"],
+            y_seq=self.params["y_seq"],
             min_date=DATE_PARAMS["train"]["start"],
             max_date=DATE_PARAMS["test"]["end"],
             val_start=DATE_PARAMS["val"]["start"],
@@ -177,11 +178,25 @@ class GTMExperiment:
 
         # Save the experiment results:
 
+        # Save the model JSON:
+        model_json = model.to_json()
+        fp = os.path.join(EXPERIMENT_DIR, f"{experiment_id}__model.json")
+        with open(fp, "w") as f:
+            json.dump(model_json, f)
+
+        # Save the full trained model:
+        fp = os.path.join(EXPERIMENT_DIR, f"{experiment_id}__trained_model")
+        model.save(fp)
+
         # Save the validation predictions:
         experiment["val_pred_start_time"] = datetime.datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
         n_val_steps = len(self.cnn_data.val_pairs)
         val_pred = model.predict(datasets["val_data"], steps=n_val_steps)
-        columns = [f"y_day_{y+1}" for y in range(self.params["n_days_y"])]
+        if self.params["y_seq"]:
+            columns = [f"y_day_{y+1}" for y in range(self.params["n_days_y"])]
+        else:
+            y_day = self.params["n_days_y"]
+            columns = [f"y_day_{y_day}"]
         df = pd.DataFrame(val_pred, columns=columns)
         df["gage"] = [t[0] for t in self.cnn_data.val_pairs]
         df["date"] = [t[1].to_pydatetime().date() for t in self.cnn_data.val_pairs]
@@ -195,7 +210,11 @@ class GTMExperiment:
         experiment["test_pred_start_time"] = datetime.datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
         n_test_steps = len(self.cnn_data.test_pairs)
         test_pred = model.predict(datasets["test_data"], steps=n_test_steps)
-        columns = [f"y_day_{y+1}" for y in range(self.params["n_days_y"])]
+        if self.params["y_seq"]:
+            columns = [f"y_day_{y+1}" for y in range(self.params["n_days_y"])]
+        else:
+            y_day = self.params["n_days_y"]
+            columns = [f"y_day_{y_day}"]
         df = pd.DataFrame(test_pred, columns=columns)
         df["gage"] = [t[0] for t in self.cnn_data.test_pairs]
         df["date"] = [t[1].to_pydatetime().date() for t in self.cnn_data.test_pairs]
@@ -204,16 +223,6 @@ class GTMExperiment:
         test_pred = df[order]
         test_pred.to_csv(fp, encoding="utf-8", index=False)
         experiment["test_pred_end_time"] = datetime.datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
-
-        # Save the model JSON:
-        model_json = model.to_json()
-        fp = os.path.join(EXPERIMENT_DIR, f"{experiment_id}__model.json")
-        with open(fp, "w") as f:
-            json.dump(model_json, f)
-
-        # Save the full trained model:
-        fp = os.path.join(EXPERIMENT_DIR, f"{experiment_id}__trained_model")
-        model.save(fp)
 
         # Save the experiment metadata:
         experiment["end_time"] = datetime.datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
@@ -229,6 +238,11 @@ class GTMExperiment:
         # Create the model architecture:
         architecture = GAPTransMaxArchitecture()
 
+        if not self.params["y_seq"]:
+            n_y = 1
+        else:
+            n_y = self.params["n_days_y"]
+
         model = architecture.get_model(
             kernal=self.params["kernal"],
             strides=self.params["strides"],
@@ -242,7 +256,7 @@ class GTMExperiment:
             dec_embed_dim=self.params["dec_embed_dim"],
             dec_dense_dim=self.params["dec_dense_dim"],
             dec_num_heads=self.params["dec_num_heads"],
-            n_y=self.params["n_days_y"],
+            n_y=n_y,
             hidden_dim=self.params["hidden_dim"],
             dropout=self.params["dropout"],
             cnn_activation=self.params["cnn_activation"],
@@ -253,7 +267,7 @@ class GTMExperiment:
 
 if __name__ == "__main__":
 
-    for n_days_y in [1, 7, 14]:
+    for n_days_y in [7, 14]:
         exp_params = dict(
             gages=['11402000', '11189500', '11318500', '11266500', '11202710'],  # '11208000', '11185500'
             y_col="m3",  # "m3_per_area_km", "m3_per_area_miles"
@@ -280,7 +294,7 @@ if __name__ == "__main__":
             sample_weight=2,
 
             # Model training params:
-            epochs=8,
+            epochs=4,
             learning_rate=0.0001,
             opt=keras.optimizers.Adam,
             loss="mean_squared_error",
