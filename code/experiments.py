@@ -39,7 +39,7 @@ class Experiment:
             self.metadata = yaml.safe_load(f)
         for int_key in ("n_days_precip", "n_days_temp", "n_days_et", "n_days_y", "n_swe", "n_et"):
             self.metadata[int_key] = int(self.metadata[int_key])
-        for eval_key in ("swe_days_relative", "y_seq", "use_masks", "gages", "shuffle_train"):
+        for eval_key in ("swe_days_relative", "y_seq", "use_masks", "gages", "shuffle_train", "log_transform_y"):
             try:
                 self.metadata[eval_key] = eval(self.metadata[eval_key])
             except KeyError:  # Use defaults for earlier experiments which didn't have parameter:
@@ -109,8 +109,7 @@ class Experiment:
         self.val_data = keras_datasets["val_data"]
         self.test_data = keras_datasets["test_data"]
 
-    def get_predictions(self, predict: str = "test",
-                        epoch: int = None):
+    def get_predictions(self, predict: str = "test", epoch: int = None):
         """Make predictions using the save model.
 
         Args:
@@ -134,8 +133,19 @@ class Experiment:
             self.load_trained_model(epoch)
         model = self.loaded_models[epoch]
         pred = model.predict(dataset, steps=n_steps)
-        columns = [f"y_day_{y+1}" for y in range(self.metadata["n_days_y"])]
+        y_seq = self.metadata.get("y_seq", True)
+        n_days_y = self.metadata["n_days_y"]
+        if y_seq:
+            columns = [f"y_day_{y+1}" for y in range(n_days_y)]
+        else:
+            columns = [f"y_day_{n_days_y}"]
         df = pd.DataFrame(pred, columns=columns)
+
+        # Undo log transformations:
+        if self.metadata["log_transform_y"]:
+            for c in columns:
+                df[c] = np.exp(df[c])
+
         df["gage"] = [t[0] for t in pairs]
         df["date"] = [t[1].to_pydatetime().date() for t in pairs]
         order = ["gage", "date"] + columns
