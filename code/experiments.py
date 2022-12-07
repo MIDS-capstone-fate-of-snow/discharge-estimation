@@ -43,7 +43,7 @@ class Experiment:
             try:
                 self.metadata[eval_key] = eval(self.metadata[eval_key])
             except KeyError:  # Use defaults for earlier experiments which didn't have parameter:
-                defaults = {"y_seq": True}
+                defaults = {"y_seq": True, "log_transform_y": False}
                 self.metadata[eval_key] = defaults[eval_key]
         self.ckpt_dir = experiment_path(f"{experiment_id}__ckpts")
         try:
