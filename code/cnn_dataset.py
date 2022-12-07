@@ -45,6 +45,7 @@ class CNNSeqDataset:
                  gages: list = None,
                  sample_z_score: float = None,
                  sample_weight: float = None,
+                 log_transform_y: bool = False,
                  random_seed: int = 42,
                  shuffle_train: bool = True):
         """Construct image training dataset for training CNN sequence models.
@@ -78,6 +79,7 @@ class CNNSeqDataset:
         self.swe_d_rel = list(swe_d_rel)
         self.n_d_y = n_d_y
         self.y_seq = y_seq
+        self.log_transform_y = log_transform_y
 
         self.min_date = convert_datetime(min_date)
         self.max_date = convert_datetime(max_date)
@@ -341,7 +343,11 @@ class CNNSeqDataset:
             fps: dict output from `get_required_filepaths` method.
         """
         data = dict()
-        data["y"] = fps["y"].values
+        if self.log_transform_y:
+            data["y"] = np.log(fps["y"].values)
+        else:
+            data["y"] = fps["y"].values
+
         for band in ("temp", "precip", "et", "swe"):
             arrays = list()
             for fp in fps[band]:

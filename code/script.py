@@ -5,6 +5,7 @@ import json
 import os
 import uuid
 
+import numpy as np
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
@@ -39,6 +40,7 @@ class GTMExperiment:
             y_seq=True,
             use_masks=True,
             shuffle_train=True,
+            log_transform_y=True,
 
             # Model architecture params:
             enc_embed_dim=16, enc_dense_dim=32, enc_num_heads=2,
@@ -198,6 +200,9 @@ class GTMExperiment:
             y_day = self.params["n_days_y"]
             columns = [f"y_day_{y_day}"]
         df = pd.DataFrame(val_pred, columns=columns)
+        if self.params["log_transform_y"]:
+            for c in columns:
+                df[c] = np.exp(df[c])
         df["gage"] = [t[0] for t in self.cnn_data.val_pairs]
         df["date"] = [t[1].to_pydatetime().date() for t in self.cnn_data.val_pairs]
         fp = os.path.join(EXPERIMENT_DIR, f"{experiment_id}__val_pred.csv")
@@ -216,6 +221,9 @@ class GTMExperiment:
             y_day = self.params["n_days_y"]
             columns = [f"y_day_{y_day}"]
         df = pd.DataFrame(test_pred, columns=columns)
+        if self.params["log_transform_y"]:
+            for c in columns:
+                df[c] = np.exp(df[c])
         df["gage"] = [t[0] for t in self.cnn_data.test_pairs]
         df["date"] = [t[1].to_pydatetime().date() for t in self.cnn_data.test_pairs]
         fp = os.path.join(EXPERIMENT_DIR, f"{experiment_id}__test_pred.csv")
