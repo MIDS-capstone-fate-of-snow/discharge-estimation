@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 import os
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -322,10 +323,7 @@ class ExperimentAnalysis:
                 best_epoch = None
 
             # Load/Make predictions:
-            if best_epoch is None:
-                pred = expt.load_predictions("test")
-            else:
-                pred = expt.get_predictions(predict="test", epoch=best_epoch)
+            pred = expt.get_predictions("test", epoch=best_epoch)
 
             # Add metadata:
             pred["expt_id"] = expt_id
@@ -398,3 +396,71 @@ class ExperimentAnalysis:
         results["mape"].append(score_mape(y_true, dl_pred))
 
         return pd.DataFrame(results)
+
+    def make_best_predictions(self, *experiment_id: str, predict: str = "val"):
+        """For the given experiment IDs use the best version of the model to
+        save its predictions on either val or test set. If no experiment ID is
+        passed, runs for all experiments.
+
+        Args:
+            experiment_id: unique experiment UUID.
+            predict: what to predict, either 'val' or 'test'.
+        """
+        if not len(experiment_id):
+            experiment_id = self.experiments.index
+        for exp_id in tqdm(experiment_id):
+            try:
+                expt = Experiment(exp_id)
+                _ = expt.get_predictions(predict, expt.best_epoch)
+            except ValueError as e:
+                warnings.warn(f"ValueError on experiment id: '{exp_id}'")
+
+    @staticmethod
+    def open_pred(fp: str):
+        df = pd.read_csv(fp)
+        df["gage"] = df["gage"].astype(str)
+        df["date"] = pd.to_datetime(df["date"])
+        return df
+
+    def compile_all_scores(self, predict: str = "test"):
+        # List all CSV results files:
+        files = os.listdir(EXPERIMENT_DIR)
+        files = [fn for fn in files if fn.endswith(".csv") and f"{predict}_pred" in fn]
+
+        # Get the true data to compute scores:
+        true_y = open_y_data()
+        true_y = true_y.sort_values(by=["gage", "date"])
+        true_y = true_y.set_index(["gage", "date"])
+
+        # Iterate through the files computing scores:
+        results = list()
+        score_functions = {"rmse": score_rmse, "rrmse": score_rrmse, "mape": score_mape}
+        for fn in tqdm(files):
+            expt_id = fn.split("__")[0]
+            y_col = self.experiments.loc[expt_id]["y_col"]
+            fp = experiment_path(fn)
+            df = self.open_pred(fp).set_index(["gage", "date"])
+            pred_cols = [c for c in df.columns if c.startswith("y_day_")]
+            y_days = [int(c.replace("y_day_", "")) for c in pred_cols]
+            training_gages = self.experiments.loc[expt_id]["gages"]
+            epoch = fn.split("epoch_")[-1].split(".")[0]
+            result = dict(expt_id=expt_id, training_gages=training_gages, epoch=epoch)
+            for (col_name, day) in zip(pred_cols, y_days):
+
+                # Shift the true y data back to join up with the prediction date:
+                shifted_y = true_y[y_col].shift(-(day-1))
+                y_day_col_name = f"true_{col_name}"
+                df[y_day_col_name] = shifted_y
+
+                # Calculate the scores:
+                for score_name, func in score_functions.items():
+                    col_score = func(df[y_day_col_name], df[col_name])
+                    result[f"{col_name}__{score_name}"] = col_score
+
+            results.append(result)
+
+        results = pd.DataFrame(results)
+        fp = experiment_path(f"experiment_{predict}_scores.csv")
+        results.to_csv(fp, encoding="utf-8", index=False)
+        print(f"Scores saved to: {fp}")
+        return results
