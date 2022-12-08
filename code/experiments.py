@@ -109,8 +109,8 @@ class Experiment:
         self.val_data = keras_datasets["val_data"]
         self.test_data = keras_datasets["test_data"]
 
-    def get_predictions(self, predict: str = "test", epoch: int = None):
-        """Make predictions using the save model.
+    def _make_predictions(self, predict: str = "test", epoch: int = None):
+        """Make predictions using the saved model.
 
         Args:
             predict: what to predict; either 'val' or 'test'.
@@ -120,6 +120,8 @@ class Experiment:
             return self.predictions[epoch][predict]
         except KeyError:
             pass
+
+        # Load the dataset:
         if self.cnn_dataset is None:
             self.load_model_dataset()
         dataset = {"test": self.test_data,
@@ -129,9 +131,13 @@ class Experiment:
                  "val": self.cnn_dataset.val_pairs,
                  "train": self.cnn_dataset.train_pairs}[predict]
         n_steps = len(pairs)
+
+        # Load the model:
         if self.loaded_models.get(epoch) is None:
             self.load_trained_model(epoch)
         model = self.loaded_models[epoch]
+
+        # Make the predictions:
         pred = model.predict(dataset, steps=n_steps)
         y_seq = self.metadata.get("y_seq", True)
         n_days_y = self.metadata["n_days_y"]
@@ -146,18 +152,32 @@ class Experiment:
             for c in columns:
                 df[c] = np.exp(df[c])
 
+        # Add additional columns:
         df["gage"] = [t[0] for t in pairs]
         df["date"] = [t[1].to_pydatetime().date() for t in pairs]
         order = ["gage", "date"] + columns
         pred = df[order]
         self.predictions[epoch][predict] = pred
+
+        # Save to file:
+        fp = experiment_path(f"{self.experiment_id}__{predict}_pred__epoch_{epoch}.csv")
+        pred.to_csv(fp, encoding="utf-8", index=False)
+        print(f"Predictions for '{predict}' set, epoch={epoch} saved to: {fp}")
+
         return pred
 
-    def load_predictions(self, predict: str = "test"):
-        fp = experiment_path(f"{self.experiment_id}__{predict}_pred.csv")
+    def _load_predictions(self, predict: str = "test", epoch: int = None):
+        fp = experiment_path(f"{self.experiment_id}__{predict}_pred__epoch_{epoch}.csv")
+        assert os.path.exists(fp), f"File doesn't exist: {fp}"
         df = pd.read_csv(fp)
         df["gage"] = df["gage"].astype(str)
         return df
+
+    def get_predictions(self, predict: str = "test", epoch: int = None):
+        try:
+            return self._load_predictions(predict, epoch)
+        except AssertionError:
+            return self._make_predictions(predict, epoch)
 
     def get_test_set(self, day: int = None):
         # Get the date range for the max prediction:
@@ -166,7 +186,7 @@ class Experiment:
         gage = "11402000"
 
         # Load the model predictions:
-        pred = self.load_predictions("test")
+        pred = self._load_predictions("test")
         pred["date"] = pd.to_datetime(pred["date"])  # NOQA
         available_cols = [c for c in pred.columns if c.startswith("y_day_")]
         max_day_available = max([int(c.replace("y_day_", "")) for c in available_cols])
@@ -255,3 +275,30 @@ class Experiment:
 
         fig.suptitle(f"Gage {gage} 2016 Test Set Predictions, {day} Day{'s' if day > 1 else ''} Ahead", y=1.05)
         return fig
+
+    @property
+    def training_val_scores(self):
+        ckpt_dir = experiment_path(f"{self.experiment_id}__ckpts")
+        assert os.path.exists(ckpt_dir), f"Checkpoint directory not found: {ckpt_dir}"
+        files = sorted([fn.replace(".hdf5", "") for fn in os.listdir(ckpt_dir) if fn.endswith(".hdf5")])
+        scores = [fn.split("-")[1] for fn in files]
+        try:
+            return {i: float(s) for i, s in enumerate(scores, 1)}
+        except (TypeError, ValueError):
+            return {i+1: None for i in range(len(scores))}
+
+    @property
+    def best_epoch(self):
+        try:
+            scores = self.training_val_scores
+        except AssertionError:
+            return None
+        best_score, best_epoch = np.inf, None
+        for ep, score in scores.items():
+            if score is None:
+                continue
+            elif score < best_score:
+                best_epoch, best_score = ep, score
+        if best_epoch == max(scores.keys()):
+            best_epoch = None
+        return best_epoch
