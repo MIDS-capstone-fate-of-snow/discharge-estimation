@@ -1,6 +1,6 @@
 #  Discharge Estimation in Western US
 
-Main project repository for UC Berkeley Fall 2022 Capstone project.
+Main project repository for UC Berkeley Fall 2022 Capstone project. See the final presentation deck summarizing findings [here](https://docs.google.com/presentation/d/1pDesMmo2YIg6fW_5xN-YbuV7-70wK_8RJSI0UGFcpZ4/edit#slide=id.p).
 
 ## Team
 
